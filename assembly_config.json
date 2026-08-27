@@ -1,0 +1,48 @@
+{
+  "project": {
+    "name": "clothing-store",
+    "framework": "nextjs-app-router"
+  },
+  "repositories": [
+    {
+      "name": "nexshop",
+      "url": "https://github.com/AbdelhamidKhald/fullstack-ecommerce-platform.git",
+      "approved_licenses": ["MIT"]
+    },
+    {
+      "name": "ecommerce-admin",
+      "url": "https://github.com/taiwo-adewale/ecommerce-admin.git",
+      "approved_licenses": []
+    },
+    {
+      "name": "ecommerce-supabase-nextjs",
+      "url": "https://github.com/tarektech/ecommerce-supabase-Nextjs.git",
+      "approved_licenses": []
+    },
+    {
+      "name": "greenbaskett",
+      "url": "https://github.com/E-ugine/Greenbaskett.git",
+      "approved_licenses": []
+    },
+    {
+      "name": "fashion-ecommerce-react",
+      "url": "https://github.com/TornadoInsight/Fashion-eCommerce-Shop-in-React.git",
+      "approved_licenses": ["MIT"]
+    }
+  ],
+  "copy_rules": [
+    {
+      "source_repo": "nexshop",
+      "source": "src",
+      "destination": "sources_imported/nexshop/src",
+      "enabled": true
+    },
+    {
+      "source_repo": "nexshop",
+      "source": "supabase",
+      "destination": "sources_imported/nexshop/supabase",
+      "enabled": true
+    }
+  ],
+  "transformations": []
+}
