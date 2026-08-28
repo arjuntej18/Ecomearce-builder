@@ -1,5 +1,7 @@
 "use client";
 
+// Admin product list with inline variant-price editing.
+
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
@@ -24,6 +26,9 @@ type Variant = {
   id: string;
   product_id: string;
   price: number | null;
+  size: string | null;
+  color: string | null;
+  sku: string;
 };
 
 type Inventory = {
@@ -31,92 +36,166 @@ type Inventory = {
   quantity: number | null;
 };
 
-type Filter = "all" | "active" | "inactive";
+type Filter =
+  | "all"
+  | "active"
+  | "inactive";
 
 export default function ProductsPage() {
   const router = useRouter();
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [variants, setVariants] = useState<Variant[]>([]);
-  const [inventory, setInventory] = useState<Inventory[]>([]);
+  const [products, setProducts] =
+    useState<Product[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [variants, setVariants] =
+    useState<Variant[]>([]);
+
+  const [inventory, setInventory] =
+    useState<Inventory[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [search, setSearch] =
+    useState("");
+
+  const [filter, setFilter] =
+    useState<Filter>("all");
+
+  const [editingVariantId, setEditingVariantId] =
+    useState<string | null>(null);
+
+  const [editingPrice, setEditingPrice] =
+    useState("");
+
+  const [savingVariantId, setSavingVariantId] =
+    useState<string | null>(null);
+
+  const [error, setError] =
+    useState("");
 
   async function loadProducts() {
     setLoading(true);
+    setError("");
 
     try {
-      const { data: productData, error: productError } =
-        await supabase
-          .from("products")
-          .select(
-            "id, name, slug, brand, base_price, sale_price, is_active, is_featured"
-          )
-          .order("created_at", { ascending: false });
+      const {
+        data: productData,
+        error: productError,
+      } = await supabase
+        .from("products")
+        .select(
+          "id, name, slug, brand, base_price, sale_price, is_active, is_featured"
+        )
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (productError) {
         console.error(productError);
-        setProducts([]);
+        setError(
+          "Unable to load products."
+        );
         return;
       }
 
-      const loadedProducts = (productData ?? []) as Product[];
-      setProducts(loadedProducts);
+      const loadedProducts =
+        (productData ??
+          []) as Product[];
 
-      if (loadedProducts.length === 0) {
+      setProducts(
+        loadedProducts
+      );
+
+      if (!loadedProducts.length) {
         setVariants([]);
         setInventory([]);
         return;
       }
 
-      const productIds = loadedProducts.map(
-        (product) => product.id
-      );
+      const productIds =
+        loadedProducts.map(
+          (product) =>
+            product.id
+        );
 
-      const { data: variantData, error: variantError } =
-        await supabase
-          .from("product_variants")
-          .select("id, product_id, price")
-          .in("product_id", productIds);
+      const {
+        data: variantData,
+        error: variantError,
+      } = await supabase
+        .from("product_variants")
+        .select(
+          "id, product_id, price, size, color, sku"
+        )
+        .in(
+          "product_id",
+          productIds
+        )
+        .eq(
+          "is_active",
+          true
+        );
 
       if (variantError) {
-        console.error(variantError);
+        console.error(
+          variantError
+        );
         setVariants([]);
         setInventory([]);
         return;
       }
 
-      const loadedVariants = (variantData ?? []) as Variant[];
-      setVariants(loadedVariants);
+      const loadedVariants =
+        (variantData ??
+          []) as Variant[];
 
-      if (loadedVariants.length === 0) {
+      setVariants(
+        loadedVariants
+      );
+
+      if (!loadedVariants.length) {
         setInventory([]);
         return;
       }
 
-      const variantIds = loadedVariants.map(
-        (variant) => variant.id
-      );
+      const variantIds =
+        loadedVariants.map(
+          (variant) =>
+            variant.id
+        );
 
       const {
         data: inventoryData,
         error: inventoryError,
       } = await supabase
         .from("inventory")
-        .select("variant_id, quantity")
-        .in("variant_id", variantIds);
+        .select(
+          "variant_id, quantity"
+        )
+        .in(
+          "variant_id",
+          variantIds
+        );
 
       if (inventoryError) {
-        console.error(inventoryError);
+        console.error(
+          inventoryError
+        );
         setInventory([]);
         return;
       }
 
-      setInventory((inventoryData ?? []) as Inventory[]);
+      setInventory(
+        (inventoryData ??
+          []) as Inventory[]
+      );
     } catch (error) {
       console.error(error);
+
+      setError(
+        "Unable to load products."
+      );
+
       setProducts([]);
       setVariants([]);
       setInventory([]);
@@ -129,64 +208,294 @@ export default function ProductsPage() {
     loadProducts();
   }, []);
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const filteredProducts =
+    useMemo(() => {
+      const query =
+        search.trim().toLowerCase();
 
-    return products.filter((product) => {
-      const matchesSearch =
-        !query ||
-        product.name.toLowerCase().includes(query) ||
-        product.slug.toLowerCase().includes(query) ||
-        (product.brand ?? "").toLowerCase().includes(query);
+      return products.filter(
+        (product) => {
+          const matchesSearch =
+            !query ||
+            product.name
+              .toLowerCase()
+              .includes(query) ||
+            product.slug
+              .toLowerCase()
+              .includes(query) ||
+            (
+              product.brand ??
+              ""
+            )
+              .toLowerCase()
+              .includes(query);
 
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "active" && product.is_active) ||
-        (filter === "inactive" && !product.is_active);
+          const matchesFilter =
+            filter === "all" ||
+            (
+              filter === "active" &&
+              product.is_active
+            ) ||
+            (
+              filter === "inactive" &&
+              !product.is_active
+            );
 
-      return matchesSearch && matchesFilter;
-    });
-  }, [products, search, filter]);
+          return (
+            matchesSearch &&
+            matchesFilter
+          );
+        }
+      );
+    }, [
+      products,
+      search,
+      filter,
+    ]);
 
-  function getProductVariants(productId: string) {
+  function getProductVariants(
+    productId: string
+  ) {
     return variants.filter(
-      (variant) => variant.product_id === productId
+      (variant) =>
+        variant.product_id ===
+        productId
     );
   }
 
-  function getVariantCount(productId: string) {
-    return getProductVariants(productId).length;
+  function getVariantCount(
+    productId: string
+  ) {
+    return getProductVariants(
+      productId
+    ).length;
   }
 
-  function getStock(productId: string) {
-    const productVariantIds = getProductVariants(productId).map(
-      (variant) => variant.id
-    );
+  function getStock(
+    productId: string
+  ) {
+    const productVariantIds =
+      getProductVariants(
+        productId
+      ).map(
+        (variant) =>
+          variant.id
+      );
 
     return inventory
       .filter((item) =>
-        productVariantIds.includes(item.variant_id)
+        productVariantIds.includes(
+          item.variant_id
+        )
       )
       .reduce(
         (total, item) =>
-          total + Number(item.quantity ?? 0),
+          total +
+          Number(
+            item.quantity ?? 0
+          ),
         0
       );
   }
 
-  function getStartingPrice(productId: string) {
-    const prices = getProductVariants(productId)
-      .map((variant) => Number(variant.price))
-      .filter(
-        (price) =>
-          Number.isFinite(price) && price > 0
-      );
+  function getStartingPrice(
+    productId: string
+  ) {
+    const prices =
+      getProductVariants(
+        productId
+      )
+        .map((variant) =>
+          Number(
+            variant.price
+          )
+        )
+        .filter(
+          (price) =>
+            Number.isFinite(
+              price
+            ) &&
+            price > 0
+        );
 
     if (!prices.length) {
       return null;
     }
 
-    return Math.min(...prices);
+    return Math.min(
+      ...prices
+    );
+  }
+
+  function startPriceEdit(
+    variant: Variant
+  ) {
+    setEditingVariantId(
+      variant.id
+    );
+
+    setEditingPrice(
+      String(
+        variant.price ?? ""
+      )
+    );
+
+    setError("");
+  }
+
+  function cancelPriceEdit() {
+    setEditingVariantId(null);
+    setEditingPrice("");
+  }
+
+  async function saveVariantPrice(
+    variant: Variant
+  ) {
+    const price =
+      Number(editingPrice);
+
+    if (
+      !Number.isFinite(
+        price
+      ) ||
+      price <= 0
+    ) {
+      setError(
+        "Price must be greater than zero."
+      );
+      return;
+    }
+
+    setSavingVariantId(
+      variant.id
+    );
+
+    setError("");
+
+    try {
+      const response =
+        await fetch(
+          `/api/admin/products/${variant.product_id}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              name:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.name ?? "",
+
+              slug:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.slug ?? "",
+
+              description:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.slug ?? "",
+
+              brand:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.brand ?? "",
+
+              base_price:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.base_price ?? price,
+
+              sale_price:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.sale_price ??
+                null,
+
+              category_id:
+                null,
+
+              main_image_url:
+                null,
+
+              is_featured:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.is_featured ??
+                false,
+
+              is_active:
+                products.find(
+                  (product) =>
+                    product.id ===
+                    variant.product_id
+                )?.is_active ??
+                true,
+
+              variants: [
+                {
+                  id: variant.id,
+                  price,
+                },
+              ],
+            }),
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        setError(
+          result.error ||
+            "Unable to update price."
+        );
+        return;
+      }
+
+      setVariants(
+        (current) =>
+          current.map(
+            (item) =>
+              item.id ===
+              variant.id
+                ? {
+                    ...item,
+                    price,
+                  }
+                : item
+          )
+      );
+
+      setEditingVariantId(null);
+      setEditingPrice("");
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        "Unable to update price."
+      );
+    } finally {
+      setSavingVariantId(
+        null
+      );
+    }
   }
 
   return (
@@ -213,7 +522,9 @@ export default function ProductsPage() {
           <button
             type="button"
             onClick={() =>
-              router.push("/admin/products/new")
+              router.push(
+                "/admin/products/new"
+              )
             }
             className="rounded-lg bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800"
           >
@@ -221,52 +532,56 @@ export default function ProductsPage() {
           </button>
         </div>
 
+        {error && (
+          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Search + Filters */}
         <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) =>
+              setSearch(
+                e.target.value
+              )
+            }
             placeholder="Search products..."
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-black md:max-w-md"
           />
 
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setFilter("all")}
-              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${
-                filter === "all"
-                  ? "border-black bg-black text-white"
-                  : "border-gray-300 bg-white text-gray-900"
-              }`}
-            >
-              All
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilter("active")}
-              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${
-                filter === "active"
-                  ? "border-black bg-black text-white"
-                  : "border-gray-300 bg-white text-gray-900"
-              }`}
-            >
-              Active
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilter("inactive")}
-              className={`rounded-lg border px-4 py-3 text-sm font-semibold ${
-                filter === "inactive"
-                  ? "border-black bg-black text-white"
-                  : "border-gray-300 bg-white text-gray-900"
-              }`}
-            >
-              Inactive
-            </button>
+            {(
+              [
+                "all",
+                "active",
+                "inactive",
+              ] as Filter[]
+            ).map(
+              (filterValue) => (
+                <button
+                  key={
+                    filterValue
+                  }
+                  type="button"
+                  onClick={() =>
+                    setFilter(
+                      filterValue
+                    )
+                  }
+                  className={`rounded-lg border px-4 py-3 text-sm font-semibold capitalize ${
+                    filter ===
+                    filterValue
+                      ? "border-black bg-black text-white"
+                      : "border-gray-300 bg-white text-gray-900"
+                  }`}
+                >
+                  {filterValue}
+                </button>
+              )
+            )}
           </div>
         </div>
 
@@ -316,116 +631,257 @@ export default function ProductsPage() {
                 </thead>
 
                 <tbody>
-                  {filteredProducts.map((product) => {
-                    const variantCount = getVariantCount(
-                      product.id
-                    );
+                  {filteredProducts.map(
+                    (product) => {
+                      const productVariants =
+                        getProductVariants(
+                          product.id
+                        );
 
-                    const stock = getStock(product.id);
+                      const variantCount =
+                        productVariants.length;
 
-                    const startingPrice =
-                      getStartingPrice(product.id);
+                      const stock =
+                        getStock(
+                          product.id
+                        );
 
-                    return (
-                      <tr
-                        key={product.id}
-                        className="border-b last:border-b-0"
-                      >
-                        <td className="px-6 py-5">
-                          <div className="font-semibold text-gray-900">
-                            {product.name}
-                          </div>
+                      const startingPrice =
+                        getStartingPrice(
+                          product.id
+                        );
 
-                          <div className="mt-1 text-sm text-gray-500">
-                            {product.slug}
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-5 text-gray-700">
-                          {product.brand || "—"}
-                        </td>
-
-                        <td className="px-6 py-5">
-                          {startingPrice !== null ? (
-                            <span className="font-semibold text-gray-900">
-                              ₹{startingPrice.toFixed(2)}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-gray-400">
-                              No variant price
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-5">
-                          <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
-                            {variantCount}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-5">
-                          <span
-                            className={
-                              stock === 0
-                                ? "font-semibold text-red-600"
-                                : stock <= 5
-                                ? "font-semibold text-orange-600"
-                                : "font-semibold text-gray-900"
-                            }
-                          >
-                            {stock}
-                          </span>
-
-                          {stock <= 5 && (
-                            <div className="mt-1 text-xs text-gray-500">
-                              {stock === 0
-                                ? "Out of stock"
-                                : "Low stock"}
+                      return (
+                        <tr
+                          key={
+                            product.id
+                          }
+                          className="border-b last:border-b-0"
+                        >
+                          <td className="px-6 py-5">
+                            <div className="font-semibold text-gray-900">
+                              {
+                                product.name
+                              }
                             </div>
-                          )}
-                        </td>
 
-                        <td className="px-6 py-5">
-                          {product.is_featured
-                            ? "Yes"
-                            : "No"}
-                        </td>
+                            <div className="mt-1 text-sm text-gray-500">
+                              {
+                                product.slug
+                              }
+                            </div>
+                          </td>
 
-                        <td className="px-6 py-5">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              product.is_active
-                                ? "bg-green-100 text-green-700"
-                                : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {product.is_active
-                              ? "Active"
-                              : "Inactive"}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-5">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              router.push(
-                                `/admin/products/${product.id}`
-                              )
+                          <td className="px-6 py-5 text-gray-700">
+                            {
+                              product.brand ||
+                              "—"
                             }
-                            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:border-black"
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            {productVariants.length >
+                            0 ? (
+                              <div className="space-y-2">
+                                {productVariants.map(
+                                  (
+                                    variant
+                                  ) => {
+                                    const isEditing =
+                                      editingVariantId ===
+                                      variant.id;
+
+                                    const isSaving =
+                                      savingVariantId ===
+                                      variant.id;
+
+                                    const label =
+                                      [
+                                        variant.size,
+                                        variant.color,
+                                      ]
+                                        .filter(
+                                          Boolean
+                                        )
+                                        .join(
+                                          " / "
+                                        ) ||
+                                      variant.sku;
+
+                                    return (
+                                      <div
+                                        key={
+                                          variant.id
+                                        }
+                                        className="flex items-center gap-2"
+                                      >
+                                        <span className="min-w-[90px] text-xs text-gray-500">
+                                          {
+                                            label
+                                          }
+                                        </span>
+
+                                        {!isEditing ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              startPriceEdit(
+                                                variant
+                                              )
+                                            }
+                                            className="rounded px-2 py-1 font-semibold text-gray-900 hover:bg-gray-100 hover:underline"
+                                          >
+                                            ₹
+                                            {Number(
+                                              variant.price ??
+                                                0
+                                            ).toFixed(
+                                              2
+                                            )}
+                                          </button>
+                                        ) : (
+                                          <>
+                                            <input
+                                              type="number"
+                                              min="0.01"
+                                              step="0.01"
+                                              value={
+                                                editingPrice
+                                              }
+                                              onChange={(
+                                                event
+                                              ) =>
+                                                setEditingPrice(
+                                                  event
+                                                    .target
+                                                    .value
+                                                )
+                                              }
+                                              className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+                                              autoFocus
+                                            />
+
+                                            <button
+                                              type="button"
+                                              disabled={
+                                                isSaving
+                                              }
+                                              onClick={() =>
+                                                saveVariantPrice(
+                                                  variant
+                                                )
+                                              }
+                                              className="rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white disabled:bg-gray-400"
+                                            >
+                                              {isSaving
+                                                ? "..."
+                                                : "Save"}
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              disabled={
+                                                isSaving
+                                              }
+                                              onClick={
+                                                cancelPriceEdit
+                                              }
+                                              className="rounded border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400">
+                                No variant price
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
+                              {
+                                variantCount
+                              }
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span
+                              className={
+                                stock ===
+                                0
+                                  ? "font-semibold text-red-600"
+                                  : stock <=
+                                    5
+                                  ? "font-semibold text-orange-600"
+                                  : "font-semibold text-gray-900"
+                              }
+                            >
+                              {stock}
+                            </span>
+
+                            {stock <=
+                              5 && (
+                              <div className="mt-1 text-xs text-gray-500">
+                                {stock ===
+                                0
+                                  ? "Out of stock"
+                                  : "Low stock"}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            {product.is_featured
+                              ? "Yes"
+                              : "No"}
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                product.is_active
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {product.is_active
+                                ? "Active"
+                                : "Inactive"}
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                router.push(
+                                  `/admin/products/${product.id}`
+                                )
+                              }
+                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:border-black"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
 
                   {!filteredProducts.length && (
                     <tr>
                       <td
-                        colSpan={8}
+                        colSpan={
+                          8
+                        }
                         className="px-6 py-12 text-center text-gray-500"
                       >
                         No products found.

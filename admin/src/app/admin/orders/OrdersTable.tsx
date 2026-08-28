@@ -138,9 +138,18 @@ export default function OrdersTable({
                       key={order.id}
                       className="border-b last:border-b-0"
                     >
-                      <td className="px-6 py-4 font-medium text-gray-900">
-                        {order.order_number}
-                      </td>
+                      <td className="px-6 py-4 font-medium">
+  <button
+    type="button"
+    onClick={() =>
+      window.location.href =
+        `/admin/orders/${order.id}`
+    }
+    className="font-semibold text-gray-900 hover:underline"
+  >
+    {order.order_number}
+  </button>
+</td>
 
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900">
