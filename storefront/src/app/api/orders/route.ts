@@ -1,5 +1,6 @@
 // Creates an order from the normal cart or Buy Now.
 // Coupon discounts are validated server-side.
+// Expected delivery date is calculated from store settings.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -44,14 +45,20 @@ export async function POST(request: Request) {
       !postalCode
     ) {
       return NextResponse.json(
-        { error: "Missing checkout details." },
+        {
+          error:
+            "Missing checkout details.",
+        },
         { status: 400 }
       );
     }
 
     if (!isDirectBuy && !sessionId) {
       return NextResponse.json(
-        { error: "Cart session is required." },
+        {
+          error:
+            "Cart session is required.",
+        },
         { status: 400 }
       );
     }
@@ -70,10 +77,11 @@ export async function POST(request: Request) {
     // BUY NOW
     // -------------------------
     if (isDirectBuy) {
-      const requestedQuantity = Math.max(
-        1,
-        Number(quantity)
-      );
+      const requestedQuantity =
+        Math.max(
+          1,
+          Number(quantity)
+        );
 
       const {
         data: variant,
@@ -97,36 +105,50 @@ export async function POST(request: Request) {
 
       if (variantError || !variant) {
         return NextResponse.json(
-          { error: "Selected product variant not found." },
+          {
+            error:
+              "Selected product variant not found.",
+          },
           { status: 404 }
         );
       }
 
-      const unitPrice = Number(variant.price);
+      const unitPrice = Number(
+        variant.price
+      );
 
       if (
         !Number.isFinite(unitPrice) ||
         unitPrice <= 0
       ) {
         return NextResponse.json(
-          { error: "Selected product has an invalid price." },
+          {
+            error:
+              "Selected product has an invalid price.",
+          },
           { status: 400 }
         );
       }
 
-      const product = Array.isArray(variant.products)
+      const product = Array.isArray(
+        variant.products
+      )
         ? variant.products[0]
         : variant.products;
 
       if (!product) {
         return NextResponse.json(
-          { error: "Product information not found." },
+          {
+            error:
+              "Product information not found.",
+          },
           { status: 404 }
         );
       }
 
       const totalPrice =
-        unitPrice * requestedQuantity;
+        unitPrice *
+        requestedQuantity;
 
       items = [
         {
@@ -180,31 +202,43 @@ export async function POST(request: Request) {
 
       if (cartError || !cart) {
         return NextResponse.json(
-          { error: "Cart not found." },
+          {
+            error: "Cart not found.",
+          },
           { status: 404 }
         );
       }
 
       if (!cart.cart_items?.length) {
         return NextResponse.json(
-          { error: "Cart is empty." },
+          {
+            error: "Cart is empty.",
+          },
           { status: 400 }
         );
       }
 
       items = cart.cart_items.map(
         (item: any) => {
-          const variant = item.product_variants;
-          const product = variant?.products;
+          const variant =
+            item.product_variants;
+
+          const product =
+            variant?.products;
 
           if (!variant || !product) {
-            throw new Error("Invalid cart product.");
+            throw new Error(
+              "Invalid cart product."
+            );
           }
 
-          const unitPrice = Number(variant.price);
+          const unitPrice =
+            Number(variant.price);
 
           if (
-            !Number.isFinite(unitPrice) ||
+            !Number.isFinite(
+              unitPrice
+            ) ||
             unitPrice <= 0
           ) {
             throw new Error(
@@ -212,10 +246,13 @@ export async function POST(request: Request) {
             );
           }
 
-          const itemQuantity = Number(item.quantity);
+          const itemQuantity =
+            Number(item.quantity);
 
           if (
-            !Number.isFinite(itemQuantity) ||
+            !Number.isFinite(
+              itemQuantity
+            ) ||
             itemQuantity <= 0
           ) {
             throw new Error(
@@ -224,11 +261,13 @@ export async function POST(request: Request) {
           }
 
           const totalPrice =
-            unitPrice * itemQuantity;
+            unitPrice *
+            itemQuantity;
 
           return {
             variant_id: variant.id,
-            product_name: product.name,
+            product_name:
+              product.name,
             variant_name: [
               variant.size,
               variant.color,
@@ -244,11 +283,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const subtotal = items.reduce(
-      (sum, item) =>
-        sum + item.total_price,
-      0
-    );
+    // -------------------------
+    // TOTALS
+    // -------------------------
+    const subtotal =
+      items.reduce(
+        (sum, item) =>
+          sum + item.total_price,
+        0
+      );
 
     const shippingFee = 0;
 
@@ -256,15 +299,21 @@ export async function POST(request: Request) {
     // COUPON
     // -------------------------
     let discount = 0;
-    let couponId: string | null = null;
-    let couponUsedCount: number | null = null;
+    let couponId: string | null =
+      null;
+    let couponUsedCount:
+      | number
+      | null = null;
 
     if (
       couponCode &&
-      typeof couponCode === "string"
+      typeof couponCode ===
+        "string"
     ) {
       const normalizedCode =
-        couponCode.trim().toUpperCase();
+        couponCode
+          .trim()
+          .toUpperCase();
 
       const {
         data: coupon,
@@ -282,38 +331,59 @@ export async function POST(request: Request) {
           expires_at,
           is_active
         `)
-        .eq("code", normalizedCode)
+        .eq(
+          "code",
+          normalizedCode
+        )
         .maybeSingle();
 
-      if (couponError || !coupon) {
+      if (
+        couponError ||
+        !coupon
+      ) {
         return NextResponse.json(
-          { error: "Invalid coupon code." },
+          {
+            error:
+              "Invalid coupon code.",
+          },
           { status: 400 }
         );
       }
 
       if (!coupon.is_active) {
         return NextResponse.json(
-          { error: "This coupon is inactive." },
+          {
+            error:
+              "This coupon is inactive.",
+          },
           { status: 400 }
         );
       }
 
       if (
         coupon.expires_at &&
-        new Date(coupon.expires_at).getTime() <=
+        new Date(
+          coupon.expires_at
+        ).getTime() <=
           Date.now()
       ) {
         return NextResponse.json(
-          { error: "This coupon has expired." },
+          {
+            error:
+              "This coupon has expired.",
+          },
           { status: 400 }
         );
       }
 
       if (
         coupon.usage_limit != null &&
-        Number(coupon.used_count) >=
-          Number(coupon.usage_limit)
+        Number(
+          coupon.used_count
+        ) >=
+          Number(
+            coupon.usage_limit
+          )
       ) {
         return NextResponse.json(
           {
@@ -325,9 +395,12 @@ export async function POST(request: Request) {
       }
 
       if (
-        coupon.minimum_order_amount != null &&
+        coupon.minimum_order_amount !=
+          null &&
         subtotal <
-          Number(coupon.minimum_order_amount)
+          Number(
+            coupon.minimum_order_amount
+          )
       ) {
         return NextResponse.json(
           {
@@ -340,20 +413,28 @@ export async function POST(request: Request) {
       }
 
       if (
-        coupon.discount_type === "percentage"
+        coupon.discount_type ===
+        "percentage"
       ) {
         discount =
           subtotal *
-          (Number(coupon.discount_value) / 100);
+          (Number(
+            coupon.discount_value
+          ) /
+            100);
       } else if (
-        coupon.discount_type === "fixed"
+        coupon.discount_type ===
+        "fixed"
       ) {
         discount = Number(
           coupon.discount_value
         );
       } else {
         return NextResponse.json(
-          { error: "Invalid coupon type." },
+          {
+            error:
+              "Invalid coupon type.",
+          },
           { status: 400 }
         );
       }
@@ -364,6 +445,7 @@ export async function POST(request: Request) {
       );
 
       couponId = coupon.id;
+
       couponUsedCount = Number(
         coupon.used_count
       );
@@ -384,6 +466,55 @@ export async function POST(request: Request) {
       );
     }
 
+    // -------------------------
+    // DELIVERY DATE
+    // -------------------------
+    const {
+      data: settings,
+      error: settingsError,
+    } = await supabase
+      .from("store_settings")
+      .select("delivery_days")
+      .limit(1)
+      .maybeSingle();
+
+    if (settingsError) {
+      console.error(
+        settingsError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to load delivery settings.",
+        },
+        { status: 500 }
+      );
+    }
+
+    const deliveryDays = Math.max(
+      1,
+      Number(
+        settings?.delivery_days ?? 7
+      )
+    );
+
+    const expectedDeliveryDate =
+      new Date();
+
+    expectedDeliveryDate.setDate(
+      expectedDeliveryDate.getDate() +
+        deliveryDays
+    );
+
+    const expectedDeliveryDateString =
+      expectedDeliveryDate
+        .toISOString()
+        .split("T")[0];
+
+    // -------------------------
+    // ORDER NUMBERS
+    // -------------------------
     const orderNumber =
       `ORD-${Date.now()}-${Math.random()
         .toString(36)
@@ -393,14 +524,17 @@ export async function POST(request: Request) {
     const invoiceNumber =
       `INV-${Date.now()}`;
 
-    // Create order
+    // -------------------------
+    // CREATE ORDER
+    // -------------------------
     const {
       data: order,
       error: orderError,
     } = await supabase
       .from("orders")
       .insert({
-        order_number: orderNumber,
+        order_number:
+          orderNumber,
 
         customer_name:
           customerName,
@@ -434,66 +568,98 @@ export async function POST(request: Request) {
           totalAmount,
 
         status: "pending",
+
         payment_status:
           "pending",
 
         invoice_number:
           invoiceNumber,
+
+        expected_delivery_date:
+          expectedDeliveryDateString,
       })
       .select()
       .single();
 
-    if (orderError || !order) {
-      console.error(orderError);
+    if (
+      orderError ||
+      !order
+    ) {
+      console.error(
+        orderError
+      );
 
       return NextResponse.json(
-        { error: "Unable to create order." },
+        {
+          error:
+            "Unable to create order.",
+        },
         { status: 500 }
       );
     }
 
-    // Create order items
+    // -------------------------
+    // CREATE ORDER ITEMS
+    // -------------------------
     const {
       error: itemsError,
     } = await supabase
       .from("order_items")
       .insert(
         items.map((item) => ({
-          order_id: order.id,
+          order_id:
+            order.id,
           ...item,
         }))
       );
 
     if (itemsError) {
-      console.error(itemsError);
+      console.error(
+        itemsError
+      );
 
       await supabase
         .from("orders")
         .delete()
-        .eq("id", order.id);
+        .eq(
+          "id",
+          order.id
+        );
 
       return NextResponse.json(
-        { error: "Unable to create order items." },
+        {
+          error:
+            "Unable to create order items.",
+        },
         { status: 500 }
       );
     }
 
-    // Consume coupon only after the order and order items exist.
+    // -------------------------
+    // CONSUME COUPON
+    // -------------------------
     if (
       couponId &&
       couponUsedCount !== null
     ) {
       const {
         data: updatedCoupon,
-        error: updateCouponError,
+        error:
+          updateCouponError,
       } = await supabase
         .from("coupons")
         .update({
           used_count:
             couponUsedCount + 1,
         })
-        .eq("id", couponId)
-        .eq("used_count", couponUsedCount)
+        .eq(
+          "id",
+          couponId
+        )
+        .eq(
+          "used_count",
+          couponUsedCount
+        )
         .select("id")
         .maybeSingle();
 
@@ -512,7 +678,10 @@ export async function POST(request: Request) {
         await supabase
           .from("orders")
           .delete()
-          .eq("id", order.id);
+          .eq(
+            "id",
+            order.id
+          );
 
         return NextResponse.json(
           {
@@ -526,13 +695,28 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      orderId: order.id,
+
+      orderId:
+        order.id,
+
       orderNumber,
-      amount: totalAmount,
+
+      amount:
+        totalAmount,
+
       subtotal,
+
       discount,
+
       invoiceNumber,
-      directBuy: isDirectBuy,
+
+      expectedDeliveryDate:
+        expectedDeliveryDateString,
+
+      deliveryDays,
+
+      directBuy:
+        isDirectBuy,
     });
   } catch (error) {
     console.error(error);

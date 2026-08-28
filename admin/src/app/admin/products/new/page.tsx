@@ -1,3 +1,5 @@
+// Creates a product with category, image, variants and stock.
+
 "use client";
 
 import {
@@ -7,6 +9,12 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+
+type Category = {
+  id: string;
+  name: string;
+  slug: string;
+};
 
 type VariantForm = {
   color: string;
@@ -20,7 +28,12 @@ export default function NewProductPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
+  const [categoriesLoading, setCategoriesLoading] =
+    useState(true);
   const [error, setError] = useState("");
+
+  const [categories, setCategories] =
+    useState<Category[]>([]);
 
   const [form, setForm] = useState({
     name: "",
@@ -34,23 +47,70 @@ export default function NewProductPage() {
     is_active: true,
   });
 
-  const [variants, setVariants] = useState<VariantForm[]>([
-    {
-      color: "",
-      size: "",
-      sku: "",
-      price: "",
-      stock: "",
-    },
-  ]);
+  const [variants, setVariants] =
+    useState<VariantForm[]>([
+      {
+        color: "",
+        size: "",
+        sku: "",
+        price: "",
+        stock: "",
+      },
+    ]);
 
-  const [image, setImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [image, setImage] =
+    useState<File | null>(null);
+
+  const [previewUrl, setPreviewUrl] =
+    useState("");
+
+  useEffect(() => {
+    async function loadCategories() {
+      setCategoriesLoading(true);
+
+      try {
+        const response = await fetch(
+          "/api/admin/categories",
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          setError(
+            result.error ||
+              "Unable to load categories."
+          );
+          return;
+        }
+
+        setCategories(
+          result.categories ?? []
+        );
+      } catch (error) {
+        console.error(error);
+
+        setError(
+          "Unable to load categories."
+        );
+      } finally {
+        setCategoriesLoading(false);
+      }
+    }
+
+    loadCategories();
+  }, []);
 
   useEffect(() => {
     return () => {
       if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+        URL.revokeObjectURL(
+          previewUrl
+        );
       }
     };
   }, [previewUrl]);
@@ -73,7 +133,10 @@ export default function NewProductPage() {
     setVariants((prev) =>
       prev.map((variant, i) =>
         i === index
-          ? { ...variant, [name]: value }
+          ? {
+              ...variant,
+              [name]: value,
+            }
           : variant
       )
     );
@@ -93,15 +156,21 @@ export default function NewProductPage() {
   }
 
   function removeVariant(index: number) {
-    if (variants.length === 1) return;
+    if (variants.length === 1) {
+      return;
+    }
 
     setVariants((prev) =>
       prev.filter((_, i) => i !== index)
     );
   }
 
-  function setSelectedImage(file: File | null) {
-    if (!file) return;
+  function setSelectedImage(
+    file: File | null
+  ) {
+    if (!file) {
+      return;
+    }
 
     if (
       ![
@@ -110,12 +179,16 @@ export default function NewProductPage() {
         "image/webp",
       ].includes(file.type)
     ) {
-      setError("Only JPG, PNG, and WebP images are allowed.");
+      setError(
+        "Only JPG, PNG, and WebP images are allowed."
+      );
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be 5 MB or smaller.");
+      setError(
+        "Image must be 5 MB or smaller."
+      );
       return;
     }
 
@@ -123,16 +196,23 @@ export default function NewProductPage() {
     setImage(file);
 
     if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+      URL.revokeObjectURL(
+        previewUrl
+      );
     }
 
-    setPreviewUrl(URL.createObjectURL(file));
+    setPreviewUrl(
+      URL.createObjectURL(file)
+    );
   }
 
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
+  function handleDrop(
+    event: DragEvent<HTMLDivElement>
+  ) {
     event.preventDefault();
 
-    const file = event.dataTransfer.files?.[0];
+    const file =
+      event.dataTransfer.files?.[0];
 
     if (file) {
       setSelectedImage(file);
@@ -147,43 +227,100 @@ export default function NewProductPage() {
     setLoading(true);
     setError("");
 
-    try {
-      const formData = new FormData();
+    if (!form.category_id) {
+      setError(
+        "Please select a category."
+      );
+      setLoading(false);
+      return;
+    }
 
-      formData.append("name", form.name);
-      formData.append("slug", form.slug);
-      formData.append("description", form.description);
-      formData.append("brand", form.brand);
-      formData.append("base_price", form.base_price);
-      formData.append("sale_price", form.sale_price);
-      formData.append("category_id", form.category_id);
+    if (!variants.length) {
+      setError(
+        "Add at least one variant."
+      );
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const formData =
+        new FormData();
+
+      formData.append(
+        "name",
+        form.name
+      );
+
+      formData.append(
+        "slug",
+        form.slug
+      );
+
+      formData.append(
+        "description",
+        form.description
+      );
+
+      formData.append(
+        "brand",
+        form.brand
+      );
+
+      formData.append(
+        "base_price",
+        form.base_price
+      );
+
+      formData.append(
+        "sale_price",
+        form.sale_price
+      );
+
+      formData.append(
+        "category_id",
+        form.category_id
+      );
+
       formData.append(
         "is_featured",
-        String(form.is_featured)
+        String(
+          form.is_featured
+        )
       );
+
       formData.append(
         "is_active",
-        String(form.is_active)
+        String(
+          form.is_active
+        )
       );
 
       formData.append(
         "variants",
-        JSON.stringify(variants)
+        JSON.stringify(
+          variants
+        )
       );
 
       if (image) {
-        formData.append("image", image);
+        formData.append(
+          "image",
+          image
+        );
       }
 
-      const response = await fetch(
-        "/api/admin/products",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response =
+        await fetch(
+          "/api/admin/products",
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
       if (!response.ok) {
         setError(
@@ -193,11 +330,17 @@ export default function NewProductPage() {
         return;
       }
 
-      router.push("/admin/products");
+      router.push(
+        "/admin/products"
+      );
+
       router.refresh();
     } catch (error) {
       console.error(error);
-      setError("Unable to create product.");
+
+      setError(
+        "Unable to create product."
+      );
     } finally {
       setLoading(false);
     }
@@ -212,7 +355,7 @@ export default function NewProductPage() {
           </h1>
 
           <p className="mt-2 text-gray-600">
-            Create a product with variants and stock.
+            Create a product with category, variants and stock.
           </p>
         </div>
 
@@ -260,7 +403,10 @@ export default function NewProductPage() {
                       e.target.value
                         .toLowerCase()
                         .trim()
-                        .replace(/\s+/g, "-")
+                        .replace(
+                          /\s+/g,
+                          "-"
+                        )
                         .replace(
                           /[^a-z0-9-]/g,
                           ""
@@ -356,6 +502,53 @@ export default function NewProductPage() {
                 </div>
               </div>
 
+              {/* Category */}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-900">
+                  Category
+                </label>
+
+                <select
+                  value={form.category_id}
+                  onChange={(e) =>
+                    updateField(
+                      "category_id",
+                      e.target.value
+                    )
+                  }
+                  disabled={
+                    categoriesLoading
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900"
+                  required
+                >
+                  <option value="">
+                    {categoriesLoading
+                      ? "Loading categories..."
+                      : "Select a category"}
+                  </option>
+
+                  {categories.map(
+                    (category) => (
+                      <option
+                        key={category.id}
+                        value={category.id}
+                      >
+                        {category.name}
+                      </option>
+                    )
+                  )}
+                </select>
+
+                {!categoriesLoading &&
+                  categories.length ===
+                    0 && (
+                    <p className="mt-2 text-sm text-red-600">
+                      No categories found. Create one in Admin → Categories first.
+                    </p>
+                  )}
+              </div>
+
               {/* Image upload */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-900">
@@ -387,7 +580,8 @@ export default function NewProductPage() {
                             className="hidden"
                             onChange={(e) =>
                               setSelectedImage(
-                                e.target.files?.[0] ||
+                                e.target
+                                  .files?.[0] ||
                                   null
                               )
                             }
@@ -397,14 +591,20 @@ export default function NewProductPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (previewUrl) {
+                            if (
+                              previewUrl
+                            ) {
                               URL.revokeObjectURL(
                                 previewUrl
                               );
                             }
 
-                            setImage(null);
-                            setPreviewUrl("");
+                            setImage(
+                              null
+                            );
+                            setPreviewUrl(
+                              ""
+                            );
                           }}
                           className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900"
                         >
@@ -435,7 +635,8 @@ export default function NewProductPage() {
                           className="hidden"
                           onChange={(e) =>
                             setSelectedImage(
-                              e.target.files?.[0] ||
+                              e.target
+                                .files?.[0] ||
                                 null
                             )
                           }
@@ -446,30 +647,13 @@ export default function NewProductPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-900">
-                  Category ID
-                </label>
-
-                <input
-                  type="text"
-                  value={form.category_id}
-                  onChange={(e) =>
-                    updateField(
-                      "category_id",
-                      e.target.value
-                    )
-                  }
-                  placeholder="Optional"
-                  className="w-full rounded-lg border border-gray-300 p-3 text-gray-900"
-                />
-              </div>
-
               <div className="flex flex-wrap gap-6">
                 <label className="flex items-center gap-3 text-gray-900">
                   <input
                     type="checkbox"
-                    checked={form.is_featured}
+                    checked={
+                      form.is_featured
+                    }
                     onChange={(e) =>
                       updateField(
                         "is_featured",
@@ -477,13 +661,16 @@ export default function NewProductPage() {
                       )
                     }
                   />
+
                   Featured product
                 </label>
 
                 <label className="flex items-center gap-3 text-gray-900">
                   <input
                     type="checkbox"
-                    checked={form.is_active}
+                    checked={
+                      form.is_active
+                    }
                     onChange={(e) =>
                       updateField(
                         "is_active",
@@ -491,6 +678,7 @@ export default function NewProductPage() {
                       )
                     }
                   />
+
                   Active product
                 </label>
               </div>
@@ -528,14 +716,18 @@ export default function NewProductPage() {
                   >
                     <div className="mb-4 flex items-center justify-between">
                       <h3 className="font-semibold text-gray-900">
-                        Variant {index + 1}
+                        Variant{" "}
+                        {index + 1}
                       </h3>
 
-                      {variants.length > 1 && (
+                      {variants.length >
+                        1 && (
                         <button
                           type="button"
                           onClick={() =>
-                            removeVariant(index)
+                            removeVariant(
+                              index
+                            )
                           }
                           className="text-sm font-medium text-red-600"
                         >
@@ -552,12 +744,15 @@ export default function NewProductPage() {
 
                         <input
                           type="text"
-                          value={variant.color}
+                          value={
+                            variant.color
+                          }
                           onChange={(e) =>
                             updateVariant(
                               index,
                               "color",
-                              e.target.value
+                              e.target
+                                .value
                             )
                           }
                           placeholder="Black"
@@ -573,12 +768,15 @@ export default function NewProductPage() {
 
                         <input
                           type="text"
-                          value={variant.size}
+                          value={
+                            variant.size
+                          }
                           onChange={(e) =>
                             updateVariant(
                               index,
                               "size",
-                              e.target.value
+                              e.target
+                                .value
                             )
                           }
                           placeholder="M"
@@ -594,12 +792,15 @@ export default function NewProductPage() {
 
                         <input
                           type="text"
-                          value={variant.sku}
+                          value={
+                            variant.sku
+                          }
                           onChange={(e) =>
                             updateVariant(
                               index,
                               "sku",
-                              e.target.value
+                              e.target
+                                .value
                             )
                           }
                           placeholder="BLK-M"
@@ -617,12 +818,15 @@ export default function NewProductPage() {
                           type="number"
                           min="0.01"
                           step="0.01"
-                          value={variant.price}
+                          value={
+                            variant.price
+                          }
                           onChange={(e) =>
                             updateVariant(
                               index,
                               "price",
-                              e.target.value
+                              e.target
+                                .value
                             )
                           }
                           placeholder="799"
@@ -640,12 +844,15 @@ export default function NewProductPage() {
                           type="number"
                           min="0"
                           step="1"
-                          value={variant.stock}
+                          value={
+                            variant.stock
+                          }
                           onChange={(e) =>
                             updateVariant(
                               index,
                               "stock",
-                              e.target.value
+                              e.target
+                                .value
                             )
                           }
                           placeholder="10"
@@ -669,8 +876,11 @@ export default function NewProductPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="submit"
-              disabled={loading}
-              className="rounded-lg bg-black px-6 py-3 font-semibold text-white hover:bg-gray-800 disabled:bg-gray-400"
+              disabled={
+                loading ||
+                categoriesLoading
+              }
+              className="rounded-lg border-2 border-green-600 bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-700 disabled:border-gray-400 disabled:bg-gray-400"
             >
               {loading
                 ? "Creating..."
@@ -680,7 +890,9 @@ export default function NewProductPage() {
             <button
               type="button"
               onClick={() =>
-                router.push("/admin/products")
+                router.push(
+                  "/admin/products"
+                )
               }
               className="rounded-lg border border-gray-300 bg-white px-6 py-3 font-semibold text-gray-900"
             >

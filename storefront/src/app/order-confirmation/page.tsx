@@ -1,18 +1,106 @@
-// Final order confirmation page.
+// Displays the confirmed order and its expected delivery date.
 
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+
+type Order = {
+  order_number: string;
+  invoice_number: string | null;
+  expected_delivery_date: string | null;
+  payment_status: string;
+  total_amount: number;
+};
 
 export default function OrderConfirmationPage() {
   const searchParams = useSearchParams();
 
+  const orderId =
+    searchParams.get("orderId");
+
+  const orderNumberFromUrl =
+    searchParams.get("order") ||
+    "Unavailable";
+
+  const invoiceNumberFromUrl =
+    searchParams.get("invoice") ||
+    "Unavailable";
+
+  const [order, setOrder] =
+    useState<Order | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  useEffect(() => {
+    async function loadOrder() {
+      if (!orderId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response =
+          await fetch(
+            `/api/orders/${encodeURIComponent(
+              orderId
+            )}`,
+            {
+              cache: "no-store",
+            }
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          setError(
+            result.error ||
+              "Unable to load order details."
+          );
+          return;
+        }
+
+        setOrder(result.order);
+      } catch (error) {
+        console.error(error);
+        setError(
+          "Unable to load order details."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadOrder();
+  }, [orderId]);
+
+  const expectedDelivery =
+    order?.expected_delivery_date
+      ? new Date(
+          `${order.expected_delivery_date}T00:00:00`
+        ).toLocaleDateString(
+          "en-IN",
+          {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          }
+        )
+      : null;
+
   const orderNumber =
-    searchParams.get("order") || "Unavailable";
+    order?.order_number ||
+    orderNumberFromUrl;
 
   const invoiceNumber =
-    searchParams.get("invoice") || "Unavailable";
+    order?.invoice_number ||
+    invoiceNumberFromUrl;
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-12">
@@ -35,8 +123,14 @@ export default function OrderConfirmationPage() {
 
           {/* Order details */}
           <div className="p-6 sm:p-8">
+            {error && (
+              <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-              <div className="flex flex-col gap-4">
+              <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500">
                     Order Number
@@ -56,6 +150,41 @@ export default function OrderConfirmationPage() {
                     {invoiceNumber}
                   </p>
                 </div>
+
+                <div className="border-t border-gray-200 pt-4">
+                  <p className="text-sm font-medium text-gray-500">
+                    Expected Delivery
+                  </p>
+
+                  {loading ? (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Calculating delivery date...
+                    </p>
+                  ) : expectedDelivery ? (
+                    <p className="mt-1 text-lg font-bold text-gray-900">
+                      {expectedDelivery}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Delivery date unavailable
+                    </p>
+                  )}
+                </div>
+
+                {order && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <p className="text-sm font-medium text-gray-500">
+                      Order Total
+                    </p>
+
+                    <p className="mt-1 text-lg font-bold text-gray-900">
+                      ₹
+                      {Number(
+                        order.total_amount
+                      ).toFixed(2)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -74,7 +203,9 @@ export default function OrderConfirmationPage() {
 
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() =>
+                  window.print()
+                }
                 className="rounded-lg border border-gray-300 bg-white px-5 py-3 text-center font-semibold text-gray-900 transition hover:bg-gray-100"
               >
                 Print Invoice

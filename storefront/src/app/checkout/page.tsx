@@ -1,6 +1,6 @@
-// Checkout with Buy Now, cart checkout, OTP verification and coupons.
-
 "use client";
+
+// Handles checkout, OTP verification, order creation and Razorpay payment.
 
 import {
   FormEvent,
@@ -24,10 +24,14 @@ export default function CheckoutPage() {
 
   const buyQuantity = Math.max(
     1,
-    Number(searchParams.get("quantity") || "1")
+    Number(
+      searchParams.get("quantity") ||
+        "1"
+    )
   );
 
-  const isDirectBuy = Boolean(buyVariantId);
+  const isDirectBuy =
+    Boolean(buyVariantId);
 
   const [step, setStep] =
     useState<Step>("details");
@@ -41,17 +45,18 @@ export default function CheckoutPage() {
   const [error, setError] =
     useState("");
 
-  const [customer, setCustomer] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    addressLine1: "",
-    addressLine2: "",
-    city: "",
-    state: "",
-    postalCode: "",
-    country: "India",
-  });
+  const [customer, setCustomer] =
+    useState({
+      name: "",
+      email: "",
+      phone: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "India",
+    });
 
   const [otp, setOtp] = useState("");
 
@@ -128,9 +133,15 @@ export default function CheckoutPage() {
       }
 
       setPricing({
-        subtotal: Number(data.subtotal),
-        discount: Number(data.discount),
-        total: Number(data.total),
+        subtotal: Number(
+          data.subtotal
+        ),
+        discount: Number(
+          data.discount
+        ),
+        total: Number(
+          data.total
+        ),
       });
 
       setCouponMessage(
@@ -138,6 +149,7 @@ export default function CheckoutPage() {
       );
     } catch (err) {
       console.error(err);
+
       setCouponError(
         "Unable to apply coupon."
       );
@@ -168,15 +180,16 @@ export default function CheckoutPage() {
         } = position.coords;
 
         try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
-            {
-              headers: {
-                Accept:
-                  "application/json",
-              },
-            }
-          );
+          const response =
+            await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+              {
+                headers: {
+                  Accept:
+                    "application/json",
+                },
+              }
+            );
 
           if (!response.ok) {
             throw new Error(
@@ -220,16 +233,20 @@ export default function CheckoutPage() {
           );
         } catch (err) {
           console.error(err);
+
           setError(
             "Could not convert your location into an address."
           );
+
           setMessage("");
         } finally {
           setLoading(false);
         }
       },
       (locationError) => {
-        console.error(locationError);
+        console.error(
+          locationError
+        );
 
         setLoading(false);
         setMessage("");
@@ -335,7 +352,9 @@ export default function CheckoutPage() {
       const verificationData =
         await verificationResponse.json();
 
-      if (!verificationResponse.ok) {
+      if (
+        !verificationResponse.ok
+      ) {
         setError(
           verificationData.error ||
             "Invalid OTP."
@@ -363,56 +382,60 @@ export default function CheckoutPage() {
       );
 
       const orderResponse =
-        await fetch("/api/orders", {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            sessionId: isDirectBuy
-              ? null
-              : sessionId,
+        await fetch(
+          "/api/orders",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              sessionId: isDirectBuy
+                ? null
+                : sessionId,
 
-            variantId: isDirectBuy
-              ? buyVariantId
-              : null,
+              variantId: isDirectBuy
+                ? buyVariantId
+                : null,
 
-            quantity: isDirectBuy
-              ? buyQuantity
-              : undefined,
+              quantity: isDirectBuy
+                ? buyQuantity
+                : undefined,
 
-            couponCode:
-              couponCode
-                .trim()
-                .toUpperCase() || null,
+              couponCode:
+                couponCode
+                  .trim()
+                  .toUpperCase() ||
+                null,
 
-            customerName:
-              customer.name,
+              customerName:
+                customer.name,
 
-            customerEmail:
-              customer.email,
+              customerEmail:
+                customer.email,
 
-            customerPhone:
-              customer.phone,
+              customerPhone:
+                customer.phone,
 
-            addressLine1:
-              customer.addressLine1,
+              addressLine1:
+                customer.addressLine1,
 
-            addressLine2:
-              customer.addressLine2 ||
-              null,
+              addressLine2:
+                customer.addressLine2 ||
+                null,
 
-            city: customer.city,
-            state: customer.state,
+              city: customer.city,
+              state: customer.state,
 
-            postalCode:
-              customer.postalCode,
+              postalCode:
+                customer.postalCode,
 
-            country:
-              customer.country,
-          }),
-        });
+              country:
+                customer.country,
+            }),
+          }
+        );
 
       const orderData =
         await orderResponse.json();
@@ -566,20 +589,28 @@ export default function CheckoutPage() {
                 !isDirectBuy &&
                 sessionId
               ) {
-                await fetch("/api/cart", {
-                  method: "DELETE",
-                  headers: {
-                    "Content-Type":
-                      "application/json",
-                  },
-                  body: JSON.stringify({
-                    sessionId,
-                  }),
-                });
+                await fetch(
+                  "/api/cart",
+                  {
+                    method: "DELETE",
+                    headers: {
+                      "Content-Type":
+                        "application/json",
+                    },
+                    body: JSON.stringify({
+                      sessionId,
+                    }),
+                  }
+                );
               }
 
+              // Pass the actual order ID so
+              // the confirmation page can load
+              // expected_delivery_date from the database.
               window.location.href =
-                `/order-confirmation?order=${encodeURIComponent(
+                `/order-confirmation?orderId=${encodeURIComponent(
+                  orderData.orderId
+                )}&order=${encodeURIComponent(
                   orderData.orderNumber
                 )}&invoice=${encodeURIComponent(
                   invoiceData.invoiceNumber
@@ -596,7 +627,8 @@ export default function CheckoutPage() {
           prefill: {
             name: customer.name,
             email: customer.email,
-            contact: customer.phone,
+            contact:
+              customer.phone,
           },
 
           theme: {
@@ -619,7 +651,9 @@ export default function CheckoutPage() {
         );
       };
 
-      document.body.appendChild(script);
+      document.body.appendChild(
+        script
+      );
     } catch (err) {
       console.error(err);
 
@@ -670,7 +704,10 @@ export default function CheckoutPage() {
               setCouponCode(
                 event.target.value
                   .toUpperCase()
-                  .replace(/\s/g, "")
+                  .replace(
+                    /\s/g,
+                    ""
+                  )
               );
 
               setCouponMessage("");
@@ -708,23 +745,39 @@ export default function CheckoutPage() {
         {pricing && (
           <div className="mt-4 space-y-2 border-t pt-4 text-sm">
             <div className="flex justify-between">
-              <span>Subtotal</span>
               <span>
-                ₹{pricing.subtotal.toFixed(2)}
+                Subtotal
+              </span>
+
+              <span>
+                ₹
+                {pricing.subtotal.toFixed(
+                  2
+                )}
               </span>
             </div>
 
             <div className="flex justify-between text-green-700">
-              <span>Discount</span>
               <span>
-                -₹{pricing.discount.toFixed(2)}
+                Discount
+              </span>
+
+              <span>
+                -₹
+                {pricing.discount.toFixed(
+                  2
+                )}
               </span>
             </div>
 
             <div className="flex justify-between border-t pt-2 text-base font-bold">
               <span>Total</span>
+
               <span>
-                ₹{pricing.total.toFixed(2)}
+                ₹
+                {pricing.total.toFixed(
+                  2
+                )}
               </span>
             </div>
           </div>
@@ -733,7 +786,9 @@ export default function CheckoutPage() {
 
       {step === "details" && (
         <form
-          onSubmit={handleDetailsSubmit}
+          onSubmit={
+            handleDetailsSubmit
+          }
           className="mt-8 space-y-4"
         >
           <input
@@ -768,7 +823,9 @@ export default function CheckoutPage() {
 
           <button
             type="button"
-            onClick={handleUseLocation}
+            onClick={
+              handleUseLocation
+            }
             disabled={loading}
             className="w-full rounded border px-6 py-3"
           >
@@ -780,7 +837,9 @@ export default function CheckoutPage() {
           <input
             name="addressLine1"
             type="text"
-            value={customer.addressLine1}
+            value={
+              customer.addressLine1
+            }
             onChange={handleChange}
             placeholder="Address line 1"
             className="w-full rounded border p-3"
@@ -790,7 +849,9 @@ export default function CheckoutPage() {
           <input
             name="addressLine2"
             type="text"
-            value={customer.addressLine2}
+            value={
+              customer.addressLine2
+            }
             onChange={handleChange}
             placeholder="Address line 2 (optional)"
             className="w-full rounded border p-3"
@@ -820,7 +881,9 @@ export default function CheckoutPage() {
             <input
               name="postalCode"
               type="text"
-              value={customer.postalCode}
+              value={
+                customer.postalCode
+              }
               onChange={handleChange}
               placeholder="Postal code"
               className="w-full rounded border p-3"
@@ -857,7 +920,9 @@ export default function CheckoutPage() {
           <input
             value={otp}
             onChange={(event) =>
-              setOtp(event.target.value)
+              setOtp(
+                event.target.value
+              )
             }
             inputMode="numeric"
             autoComplete="one-time-code"
