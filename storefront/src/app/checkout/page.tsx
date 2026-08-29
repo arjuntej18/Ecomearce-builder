@@ -4,6 +4,7 @@
 
 import {
   FormEvent,
+  Suspense,
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
@@ -16,7 +17,7 @@ type Pricing = {
   total: number;
 };
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const searchParams = useSearchParams();
 
   const buyVariantId =
@@ -604,9 +605,6 @@ export default function CheckoutPage() {
                 );
               }
 
-              // Pass the actual order ID so
-              // the confirmation page can load
-              // expected_delivery_date from the database.
               window.location.href =
                 `/order-confirmation?orderId=${encodeURIComponent(
                   orderData.orderId
@@ -969,5 +967,19 @@ export default function CheckoutPage() {
         </p>
       )}
     </main>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-3xl p-6">
+          Loading checkout...
+        </main>
+      }
+    >
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

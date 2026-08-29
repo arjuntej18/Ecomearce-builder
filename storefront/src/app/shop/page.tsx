@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+// Displays the storefront product grid with sale pricing and discount badges.
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -8,155 +11,76 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type Category = {
-  id: string;
-  name: string;
-  slug: string;
+type ProductVariant = {
+  price: number | null;
+  original_price: number | null;
+  discount_percent: number | null;
+  is_active: boolean;
 };
 
 type Product = {
   id: string;
   name: string;
   slug: string;
-  category_id: string | null;
   main_image_url: string | null;
-  product_variants: {
-    price: number;
-    is_active: boolean;
-  }[];
+  product_variants: ProductVariant[];
 };
 
 export default function ShopPage() {
   const [products, setProducts] =
     useState<Product[]>([]);
 
-  const [categories, setCategories] =
-    useState<Category[]>([]);
-
-  const [selectedCategory, setSelectedCategory] =
-    useState("all");
-
   const [loading, setLoading] =
     useState(true);
 
-  const [error, setError] =
-    useState("");
-
   useEffect(() => {
-    async function loadShop() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const [
-          categoriesResult,
-          productsResult,
-        ] = await Promise.all([
-          supabase
-            .from("categories")
-            .select("id, name, slug")
-            .order("name", {
-              ascending: true,
-            }),
-
-          supabase
-            .from("products")
-            .select(`
-              id,
-              name,
-              slug,
-              category_id,
-              main_image_url,
-              product_variants (
-                price,
-                is_active
-              )
-            `)
-            .eq("is_active", true)
-            .order("created_at", {
-              ascending: false,
-            }),
-        ]);
-
-        if (categoriesResult.error) {
-          console.error(
-            categoriesResult.error
-          );
-        }
-
-        if (productsResult.error) {
-          console.error(
-            productsResult.error
-          );
-
-          setError(
-            "Unable to load products."
-          );
-
-          setProducts([]);
-          setCategories([]);
-          return;
-        }
-
-        setCategories(
-          categoriesResult.data ?? []
+    async function loadProducts() {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("products")
+        .select(
+          `
+          id,
+          name,
+          slug,
+          main_image_url,
+          product_variants (
+            price,
+            original_price,
+            discount_percent,
+            is_active
+          )
+          `
+        )
+        .eq(
+          "is_active",
+          true
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
         );
 
-        setProducts(
-          productsResult.data ?? []
-        );
-      } catch (error) {
+      if (error) {
         console.error(error);
-
-        setError(
-          "Unable to load shop."
-        );
-
         setProducts([]);
-        setCategories([]);
-      } finally {
         setLoading(false);
-      }
-    }
-
-    loadShop();
-  }, []);
-
-  const filteredProducts =
-    useMemo(() => {
-      if (
-        selectedCategory ===
-        "all"
-      ) {
-        return products;
+        return;
       }
 
-      return products.filter(
-        (product) =>
-          product.category_id ===
-          selectedCategory
+      setProducts(
+        (data ?? []) as Product[]
       );
-    }, [
-      products,
-      selectedCategory,
-    ]);
 
-  function getCategoryName(
-    categoryId: string | null
-  ) {
-    if (!categoryId) {
-      return "Uncategorized";
+      setLoading(false);
     }
 
-    return (
-      categories.find(
-        (category) =>
-          category.id ===
-          categoryId
-      )?.name ||
-      "Uncategorized"
-    );
-  }
+    loadProducts();
+  }, []);
 
   if (loading) {
     return (
@@ -168,112 +92,96 @@ export default function ShopPage() {
 
   return (
     <main className="mx-auto max-w-6xl p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">
-            Shop
-          </h1>
+      <h1 className="mb-8 text-3xl font-bold">
+        Shop
+      </h1>
 
-          <p className="mt-1 text-sm text-gray-500">
-            Browse our products.
-          </p>
-        </div>
-      </div>
+      {products.length === 0 ? (
+        <p>
+          No products available yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
+          {products.map(
+            (product) => {
+              const activeVariants =
+                product.product_variants?.filter(
+                  (variant) =>
+                    variant.is_active
+                ) ?? [];
 
-      {error && (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Categories */}
-      {categories.length > 0 && (
-        <div className="mt-8 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() =>
-              setSelectedCategory(
-                "all"
-              )
-            }
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              selectedCategory ===
-              "all"
-                ? "bg-black text-white"
-                : "border border-gray-300 bg-white text-gray-900 hover:border-black"
-            }`}
-          >
-            All
-          </button>
-
-          {categories.map(
-            (category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() =>
-                  setSelectedCategory(
-                    category.id
-                  )
-                }
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  selectedCategory ===
-                  category.id
-                    ? "bg-black text-white"
-                    : "border border-gray-300 bg-white text-gray-900 hover:border-black"
-                }`}
-              >
-                {category.name}
-              </button>
-            )
-          )}
-        </div>
-      )}
-
-      {/* Products */}
-      <div className="mt-8">
-        {filteredProducts.length ===
-        0 ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-10 text-center text-gray-500">
-            No products found in this category.
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
-            {filteredProducts.map(
-              (product) => {
-                const activeVariants =
-                  product.product_variants?.filter(
-                    (variant) =>
-                      variant.is_active
-                  ) ?? [];
-
-                const prices =
-                  activeVariants
-                    .map((variant) =>
+              const validVariants =
+                activeVariants.filter(
+                  (variant) =>
+                    Number.isFinite(
                       Number(
                         variant.price
                       )
-                    )
-                    .filter(
-                      (price) =>
-                        Number.isFinite(
-                          price
+                    ) &&
+                    Number(
+                      variant.price
+                    ) > 0
+                );
+
+              const lowestVariant =
+                validVariants.length >
+                0
+                  ? validVariants.reduce(
+                      (
+                        lowest,
+                        current
+                      ) =>
+                        Number(
+                          current.price
+                        ) <
+                        Number(
+                          lowest.price
                         )
-                    );
+                          ? current
+                          : lowest
+                    )
+                  : null;
 
-                const lowestPrice =
-                  prices.length > 0
-                    ? Math.min(
-                        ...prices
-                      )
-                    : null;
+              const currentPrice =
+                lowestVariant
+                  ? Number(
+                      lowestVariant.price
+                    )
+                  : null;
 
-                return (
-                  <a
-                    key={product.id}
-                    href={`/product/${product.slug}`}
-                    className="group rounded-lg border border-gray-200 bg-white p-4 transition hover:border-black hover:shadow-sm"
-                  >
+              const originalPrice =
+                lowestVariant?.original_price !=
+                null
+                  ? Number(
+                      lowestVariant.original_price
+                    )
+                  : null;
+
+              const discountPercent =
+                lowestVariant?.discount_percent !=
+                null
+                  ? Number(
+                      lowestVariant.discount_percent
+                    )
+                  : 0;
+
+              const hasDiscount =
+                originalPrice !== null &&
+                currentPrice !== null &&
+                originalPrice >
+                  currentPrice &&
+                discountPercent > 0;
+
+              return (
+                <Link
+                  key={
+                    product.id
+                  }
+                  href={`/product/${product.slug}`}
+                  className="group rounded-lg border border-gray-200 bg-white p-4 transition hover:border-black hover:shadow-sm"
+                >
+                  {/* Image */}
+                  <div className="relative overflow-hidden rounded-lg bg-gray-100">
                     {product.main_image_url ? (
                       <img
                         src={
@@ -282,39 +190,58 @@ export default function ShopPage() {
                         alt={
                           product.name
                         }
-                        className="mb-4 aspect-square w-full rounded object-cover transition group-hover:scale-[1.01]"
+                        className="aspect-square w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                       />
                     ) : (
-                      <div className="mb-4 flex aspect-square w-full items-center justify-center rounded bg-gray-100 text-sm text-gray-500">
+                      <div className="flex aspect-square items-center justify-center text-sm text-gray-500">
                         No image
                       </div>
                     )}
 
-                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      {getCategoryName(
-                        product.category_id
-                      )}
-                    </p>
+                    {hasDiscount && (
+                      <span className="absolute left-2 top-2 rounded-md bg-green-600 px-2.5 py-1 text-xs font-bold text-white">
+                        {discountPercent}% OFF
+                      </span>
+                    )}
+                  </div>
 
-                    <h2 className="mt-1 font-semibold text-gray-900">
+                  {/* Product details */}
+                  <div className="mt-4">
+                    <h2 className="font-semibold text-gray-900">
                       {product.name}
                     </h2>
 
-                    <p className="mt-2 font-medium text-gray-900">
-                      {lowestPrice !==
-                      null
-                        ? `₹${lowestPrice.toFixed(
-                            2
-                          )}`
-                        : "Price unavailable"}
-                    </p>
-                  </a>
-                );
-              }
-            )}
-          </div>
-        )}
-      </div>
+                    {hasDiscount ? (
+  <div className="mt-2 flex items-center gap-2 whitespace-nowrap">
+    <span className="text-sm font-medium text-gray-400 line-through">
+      ₹{originalPrice!.toFixed(2)}
+    </span>
+
+    <span className="text-sm font-bold text-green-600">
+      {discountPercent}% OFF
+    </span>
+
+    <span className="text-xl font-bold text-gray-900">
+      ₹{currentPrice!.toFixed(2)}
+    </span>
+  </div>
+) : (
+                      <p className="mt-2 text-lg font-bold text-gray-900">
+                        {currentPrice !==
+                        null
+                          ? `₹${currentPrice.toFixed(
+                              2
+                            )}`
+                          : "Price unavailable"}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            }
+          )}
+        </div>
+      )}
     </main>
   );
 }

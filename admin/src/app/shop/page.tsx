@@ -36,6 +36,8 @@ type Variant = {
   size: string | null;
   color: string | null;
   price: number | null;
+  original_price: number | null;
+  discount_percent: number | null;
   is_active: boolean;
 };
 
@@ -94,7 +96,14 @@ export default function ShopPreviewPage() {
 
   const [editVariants, setEditVariants] =
     useState<EditVariant[]>([]);
+  const [discountId, setDiscountId] =
+  useState<string | null>(null);
 
+const [discountPercent, setDiscountPercent] =
+  useState("");
+
+const [savingDiscountId, setSavingDiscountId] =
+  useState<string | null>(null);
   async function loadShop() {
     setLoading(true);
     setError("");
@@ -182,16 +191,18 @@ export default function ShopPreviewPage() {
       } = await supabase
         .from("product_variants")
         .select(
-          `
-          id,
-          product_id,
-          sku,
-          size,
-          color,
-          price,
-          is_active
-          `
-        )
+  `
+  id,
+  product_id,
+  sku,
+  size,
+  color,
+  price,
+  original_price,
+  discount_percent,
+  is_active
+  `
+)
         .in(
           "product_id",
           productIds
@@ -741,7 +752,111 @@ export default function ShopPreviewPage() {
                   getProductVariants(
                     product.id
                   );
+                function startDiscount(productId: string) {
+  setDiscountId(productId);
+  setDiscountPercent("");
+  setError("");
+}
 
+function cancelDiscount() {
+  setDiscountId(null);
+  setDiscountPercent("");
+}
+
+async function saveDiscount(
+  productId: string
+) {
+  const percent = Number(
+    discountPercent
+  );
+
+  if (
+    !Number.isFinite(percent) ||
+    percent <= 0 ||
+    percent >= 100
+  ) {
+    setError(
+      "Discount must be between 1% and 99%."
+    );
+    return;
+  }
+
+  setSavingDiscountId(
+    productId
+  );
+  setError("");
+
+  try {
+    const response =
+      await fetch(
+        `/api/admin/products/${productId}/discount`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            discount_percent:
+              percent,
+          }),
+        }
+      );
+
+    const result =
+      await response.json();
+
+    if (!response.ok) {
+      setError(
+        result.error ||
+          "Unable to apply discount."
+      );
+      return;
+    }
+
+    if (
+      Array.isArray(
+        result.variants
+      )
+    ) {
+      setVariants(
+        (current) =>
+          current.map(
+            (variant) => {
+              const updated =
+                result.variants.find(
+                  (
+                    item: Variant
+                  ) =>
+                    item.id ===
+                    variant.id
+                );
+
+              return updated
+                ? {
+                    ...variant,
+                    ...updated,
+                  }
+                : variant;
+            }
+          )
+      );
+    }
+
+    setDiscountId(null);
+    setDiscountPercent("");
+  } catch (error) {
+    console.error(error);
+
+    setError(
+      "Unable to apply discount."
+    );
+  } finally {
+    setSavingDiscountId(
+      null
+    );
+  }
+}
                 return (
                   <div
                     key={product.id}
@@ -783,12 +898,60 @@ export default function ShopPreviewPage() {
                             </p>
                           )}
 
-                          <p className="mt-3 text-lg font-bold text-gray-900">
-                            ₹
-                            {price.toFixed(
-                              2
-                            )}
-                          </p>
+                          <div className="mt-3">
+  {(() => {
+    const discountedVariant =
+      productVariants.find(
+        (variant) =>
+          Number(
+            variant.discount_percent ?? 0
+          ) > 0 &&
+          variant.original_price != null
+      );
+
+    const discountPercent =
+      Number(
+        discountedVariant?.discount_percent ?? 0
+      );
+
+    const originalPrice =
+      Number(
+        discountedVariant?.original_price ?? price
+      );
+
+    const currentPrice =
+      Number(
+        discountedVariant?.price ?? price
+      );
+
+    if (
+      discountPercent > 0 &&
+      originalPrice > currentPrice
+    ) {
+      return (
+        <>
+          <p className="text-sm text-gray-500 line-through">
+            ₹{originalPrice.toFixed(2)}
+          </p>
+
+          <p className="text-lg font-bold text-gray-900">
+            ₹{currentPrice.toFixed(2)}
+          </p>
+
+          <p className="mt-1 text-sm font-bold text-green-600">
+            {discountPercent}% OFF
+          </p>
+        </>
+      );
+    }
+
+    return (
+      <p className="text-lg font-bold text-gray-900">
+        ₹{price.toFixed(2)}
+      </p>
+    );
+  })()}
+</div>
 
                           <p className="mt-1 text-sm font-medium text-gray-700">
                             {
@@ -808,27 +971,99 @@ export default function ShopPreviewPage() {
                           </p>
                         </div>
 
-                        <div className="mt-4 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              startEditing(
-                                product
-                              )
-                            }
-                            className="flex-1 rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
-                          >
-                            Edit
-                          </button>
+                        <div className="grid grid-cols-3 gap-2 mt-4">
+  <button
+    type="button"
+    onClick={() =>
+      startEditing(product)
+    }
+    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+  >
+    Edit
+  </button>
 
-                          <Link
-                            href={`http://localhost:3001/product/${product.slug}`}
-                            target="_blank"
-                            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                          >
-                            View
-                          </Link>
-                        </div>
+  <Link
+    href={`http://localhost:3001/product/${product.slug}`}
+    target="_blank"
+    className="rounded-lg border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900 hover:bg-gray-50"
+  >
+    View
+  </Link>
+
+  <button
+    type="button"
+    onClick={() =>
+      startDiscount(product.id)
+    }
+    className="rounded-lg border border-green-600 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50"
+  >
+    Discount
+  </button>
+</div>
+
+{discountId === product.id && (
+  <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3">
+    <label className="mb-2 block text-xs font-semibold text-gray-700">
+      Discount percentage
+    </label>
+
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        min="1"
+        max="99"
+        step="1"
+        value={discountPercent}
+        onChange={(event) =>
+          setDiscountPercent(
+            event.target.value
+          )
+        }
+        placeholder="10"
+        className="w-20 rounded-lg border border-gray-300 bg-white p-2 text-sm"
+      />
+
+      <span className="text-sm text-gray-700">
+        %
+      </span>
+    </div>
+
+    <div className="mt-3 flex gap-2">
+      <button
+        type="button"
+        disabled={
+          savingDiscountId ===
+          product.id
+        }
+        onClick={() =>
+          saveDiscount(
+            product.id
+          )
+        }
+        className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-400"
+      >
+        {savingDiscountId ===
+        product.id
+          ? "Applying..."
+          : "Apply"}
+      </button>
+
+      <button
+        type="button"
+        disabled={
+          savingDiscountId ===
+          product.id
+        }
+        onClick={
+          cancelDiscount
+        }
+        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
                       </>
                     ) : (
                       <div className="mt-4 space-y-4">

@@ -1,38 +1,64 @@
 "use client";
 
+// Authenticates the admin and redirects to the Admin dashboard.
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
+  const supabase =
+    createSupabaseBrowserClient();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [email, setEmail] =
+    useState("");
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const [password, setPassword] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     setLoading(true);
     setError("");
 
-    const { data, error: loginError } =
+    const {
+      data,
+      error: loginError,
+    } =
       await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      console.log("LOGIN RESULT", { data, loginError });
 
-    if (loginError || !data.user) {
-      setError(loginError?.message || "Login failed.");
+    console.log("LOGIN RESULT", {
+      data,
+      loginError,
+    });
+
+    if (
+      loginError ||
+      !data.user
+    ) {
+      setError(
+        loginError?.message ||
+          "Login failed."
+      );
+
       setLoading(false);
       return;
     }
 
-    router.push("/");
+    router.push("/admin");
     router.refresh();
   }
 
@@ -54,7 +80,11 @@ export default function LoginPage() {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(event) =>
+              setEmail(
+                event.target.value
+              )
+            }
             placeholder="Admin email"
             className="w-full rounded-lg border p-3"
             required
@@ -63,7 +93,11 @@ export default function LoginPage() {
           <input
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) =>
+              setPassword(
+                event.target.value
+              )
+            }
             placeholder="Password"
             className="w-full rounded-lg border p-3"
             required
@@ -74,7 +108,9 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-lg bg-black px-4 py-3 font-semibold text-white disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading
+              ? "Signing in..."
+              : "Sign in"}
           </button>
         </div>
 

@@ -1,4 +1,4 @@
-// Secure admin-only API for loading and updating a product and its variants.
+// Secure admin-only API for loading and updating a product, variants, prices and discounts.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -18,6 +18,8 @@ type Params = {
 type VariantUpdate = {
   id: string;
   price: number;
+  original_price?: number;
+  discount_percent?: number;
 };
 
 async function verifyAdmin() {
@@ -108,6 +110,8 @@ export async function GET(
         size,
         color,
         price,
+        original_price,
+        discount_percent,
         is_active
         `
       )
@@ -162,7 +166,6 @@ export async function PATCH(
     }
 
     const { id } = await params;
-
     const body = await request.json();
 
     const {
@@ -282,6 +285,20 @@ export async function PATCH(
             price: Number(
               variant.price
             ),
+            original_price:
+              variant.original_price ==
+              null
+                ? undefined
+                : Number(
+                    variant.original_price
+                  ),
+            discount_percent:
+              variant.discount_percent ==
+              null
+                ? undefined
+                : Number(
+                    variant.discount_percent
+                  ),
           })
         );
 
@@ -298,6 +315,45 @@ export async function PATCH(
             {
               error:
                 "Every variant price must be greater than zero.",
+            },
+            { status: 400 }
+          );
+        }
+
+        if (
+          variant.original_price !==
+          undefined &&
+          (
+            !Number.isFinite(
+              variant.original_price
+            ) ||
+            variant.original_price <= 0
+          )
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Every original price must be greater than zero.",
+            },
+            { status: 400 }
+          );
+        }
+
+        if (
+          variant.discount_percent !==
+          undefined &&
+          (
+            !Number.isFinite(
+              variant.discount_percent
+            ) ||
+            variant.discount_percent < 0 ||
+            variant.discount_percent >= 100
+          )
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Discount percentage must be between 0 and 99.",
             },
             { status: 400 }
           );
@@ -457,18 +513,40 @@ export async function PATCH(
       );
     }
 
-    // Update variant prices.
+    // Update variant pricing and discount information.
     for (const variant of
       variantUpdates) {
+      const updateData: {
+        price: number;
+        original_price?: number;
+        discount_percent?: number;
+      } = {
+        price:
+          variant.price,
+      };
+
+      if (
+        variant.original_price !==
+        undefined
+      ) {
+        updateData.original_price =
+          variant.original_price;
+      }
+
+      if (
+        variant.discount_percent !==
+        undefined
+      ) {
+        updateData.discount_percent =
+          variant.discount_percent;
+      }
+
       const {
         error:
           variantUpdateError,
       } = await supabaseAdmin
         .from("product_variants")
-        .update({
-          price:
-            variant.price,
-        })
+        .update(updateData)
         .eq(
           "id",
           variant.id
@@ -486,7 +564,7 @@ export async function PATCH(
         return NextResponse.json(
           {
             error:
-              "Product was updated, but a variant price could not be updated.",
+              "Product was updated, but a variant could not be updated.",
           },
           { status: 500 }
         );
@@ -495,6 +573,8 @@ export async function PATCH(
 
     const {
       data: updatedVariants,
+      error:
+        updatedVariantsError,
     } = await supabaseAdmin
       .from("product_variants")
       .select(
@@ -505,6 +585,8 @@ export async function PATCH(
         size,
         color,
         price,
+        original_price,
+        discount_percent,
         is_active
         `
       )
@@ -513,6 +595,12 @@ export async function PATCH(
         id
       )
       .order("id");
+
+    if (updatedVariantsError) {
+      console.error(
+        updatedVariantsError
+      );
+    }
 
     return NextResponse.json({
       success: true,

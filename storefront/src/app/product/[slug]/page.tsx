@@ -25,6 +25,8 @@ type Variant = {
   size: string | null;
   color: string | null;
   price: number | null;
+  original_price: number | null;
+  discount_percent: number | null;
   is_active: boolean;
 };
 
@@ -83,8 +85,8 @@ export default function ProductPage() {
       } = await supabase
         .from("product_variants")
         .select(
-          "id, sku, size, color, price, is_active"
-        )
+  "id, sku, size, color, price, original_price, discount_percent, is_active"
+)
         .eq("product_id", productData.id)
         .eq("is_active", true)
         .order("size", {
@@ -301,13 +303,45 @@ export default function ProductPage() {
               {product.name}
             </h1>
 
-            <p className="mt-4 text-3xl font-bold text-gray-900">
-              {selectedPrice !== null
-                ? `₹${selectedPrice.toFixed(
-                    2
-                  )}`
-                : "Select an option"}
-            </p>
+            <div className="mt-4">
+  {selectedVariant &&
+  selectedVariant.original_price != null &&
+  Number(
+    selectedVariant.discount_percent ?? 0
+  ) > 0 &&
+  Number(
+    selectedVariant.original_price
+  ) > Number(
+    selectedVariant.price ?? 0
+  ) ? (
+    <>
+      <p className="text-lg text-gray-500 line-through">
+        ₹
+        {Number(
+          selectedVariant.original_price
+        ).toFixed(2)}
+      </p>
+
+      <p className="text-3xl font-bold text-gray-900">
+        ₹
+        {selectedPrice?.toFixed(2)}
+      </p>
+
+      <p className="mt-1 text-sm font-bold text-green-600">
+        {Number(
+          selectedVariant.discount_percent
+        ).toFixed(0)}
+        % OFF
+      </p>
+    </>
+  ) : (
+    <p className="text-3xl font-bold text-gray-900">
+      {selectedPrice !== null
+        ? `₹${selectedPrice.toFixed(2)}`
+        : "Select an option"}
+    </p>
+  )}
+</div>
 
             {product.description && (
               <p className="mt-5 leading-7 text-gray-700">
