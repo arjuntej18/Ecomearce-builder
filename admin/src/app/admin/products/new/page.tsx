@@ -1,4 +1,4 @@
-// Creates a product with category, image, variants and stock.
+// Creates a product with category, multiple images, variants and stock.
 
 "use client";
 
@@ -58,11 +58,8 @@ export default function NewProductPage() {
       },
     ]);
 
-  const [image, setImage] =
-    useState<File | null>(null);
-
-  const [previewUrl, setPreviewUrl] =
-    useState("");
+  const [images, setImages] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadCategories() {
@@ -107,13 +104,13 @@ export default function NewProductPage() {
 
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(
-          previewUrl
-        );
-      }
+      previewUrls.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
     };
-  }, [previewUrl]);
+    // Preview URLs are intentionally cleaned up on unmount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function updateField(
     name: string,
@@ -165,44 +162,111 @@ export default function NewProductPage() {
     );
   }
 
-  function setSelectedImage(
-    file: File | null
-  ) {
-    if (!file) {
+  function setSelectedImages(files: File[]) {
+    if (files.length === 0) {
       return;
     }
 
-    if (
-      ![
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ].includes(file.type)
-    ) {
-      setError(
-        "Only JPG, PNG, and WebP images are allowed."
-      );
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    const validFiles: File[] = [];
+    const validationErrors: string[] = [];
+
+    for (const file of files) {
+      if (!allowedTypes.includes(file.type)) {
+        validationErrors.push(
+          `${file.name}: only JPG, PNG, and WebP images are allowed.`
+        );
+        continue;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        validationErrors.push(
+          `${file.name}: image must be 5 MB or smaller.`
+        );
+        continue;
+      }
+
+      validFiles.push(file);
+    }
+
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(" "));
+    } else {
+      setError("");
+    }
+
+    if (validFiles.length === 0) {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError(
-        "Image must be 5 MB or smaller."
-      );
+    const existingKeys = new Set(
+      images.map(
+        (file) =>
+          `${file.name}-${file.size}-${file.lastModified}`
+      )
+    );
+
+    const newUniqueFiles = validFiles.filter((file) => {
+      const key = `${file.name}-${file.size}-${file.lastModified}`;
+
+      if (existingKeys.has(key)) {
+        return false;
+      }
+
+      existingKeys.add(key);
+      return true;
+    });
+
+    const remainingSlots = Math.max(
+      0,
+      5 - images.length
+    );
+
+    const filesToAdd = newUniqueFiles.slice(
+      0,
+      remainingSlots
+    );
+
+    if (filesToAdd.length === 0) {
+      setError("You can upload a maximum of 5 unique images.");
       return;
     }
 
-    setError("");
-    setImage(file);
-
-    if (previewUrl) {
-      URL.revokeObjectURL(
-        previewUrl
-      );
+    if (filesToAdd.length < newUniqueFiles.length) {
+      setError("You can upload a maximum of 5 images.");
     }
 
-    setPreviewUrl(
-      URL.createObjectURL(file)
+    setImages((prev) => [
+      ...prev,
+      ...filesToAdd,
+    ]);
+
+    setPreviewUrls((prev) => [
+      ...prev,
+      ...filesToAdd.map((file) =>
+        URL.createObjectURL(file)
+      ),
+    ]);
+  }
+
+  function removeImage(index: number) {
+    const url = previewUrls[index];
+
+    if (url) {
+      URL.revokeObjectURL(url);
+    }
+
+    setPreviewUrls((prev) =>
+      prev.filter((_, i) => i !== index)
+    );
+
+    setImages((prev) =>
+      prev.filter((_, i) => i !== index)
     );
   }
 
@@ -211,12 +275,11 @@ export default function NewProductPage() {
   ) {
     event.preventDefault();
 
-    const file =
-      event.dataTransfer.files?.[0];
+    const files = Array.from(
+      event.dataTransfer.files
+    );
 
-    if (file) {
-      setSelectedImage(file);
-    }
+    setSelectedImages(files);
   }
 
   async function handleSubmit(
@@ -303,11 +366,20 @@ export default function NewProductPage() {
         )
       );
 
-      if (image) {
+      if (images.length > 0) {
+        // Keep the first image as the main image for the existing API.
         formData.append(
           "image",
-          image
+          images[0]
         );
+
+        // Send every selected image for the gallery API.
+        images.forEach((file) => {
+          formData.append(
+            "images",
+            file
+          );
+        });
       }
 
       const response =
@@ -552,7 +624,7 @@ export default function NewProductPage() {
               {/* Image upload */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-900">
-                  Product image
+                  Product images
                 </label>
 
                 <div
@@ -562,84 +634,112 @@ export default function NewProductPage() {
                   onDrop={handleDrop}
                   className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center"
                 >
-                  {previewUrl ? (
+                  {previewUrls.length > 0 ? (
                     <div>
-                      <img
-                        src={previewUrl}
-                        alt="Product preview"
-                        className="mx-auto max-h-72 rounded-lg object-contain"
-                      />
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
+                        {previewUrls.map(
+                          (preview, index) => (
+                            <div
+                              key={preview}
+                              className="relative overflow-hidden rounded-lg border border-gray-200 bg-white"
+                            >
+                              <img
+                                src={preview}
+                                alt={`Product image ${index + 1}`}
+                                className="aspect-square w-full object-cover"
+                              />
 
-                      <div className="mt-4 flex flex-wrap justify-center gap-3">
-                        <label className="cursor-pointer rounded-lg bg-black px-4 py-2 font-semibold text-white">
-                          Change image
+                              {index === 0 && (
+                                <span className="absolute left-2 top-2 rounded-md bg-green-600 px-2 py-1 text-xs font-bold text-white">
+                                  Main image
+                                </span>
+                              )}
 
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="hidden"
-                            onChange={(e) =>
-                              setSelectedImage(
-                                e.target
-                                  .files?.[0] ||
-                                  null
-                              )
-                            }
-                          />
-                        </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeImage(index)
+                                }
+                                className="absolute right-2 top-2 rounded-md bg-black/70 px-2 py-1 text-xs font-semibold text-white hover:bg-black"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap justify-center gap-3">
+                        {images.length < 5 && (
+                          <label className="cursor-pointer rounded-lg bg-black px-4 py-2 font-semibold text-white hover:bg-gray-800">
+                            Add more images
+
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              multiple
+                              className="hidden"
+                              onChange={(e) => {
+                                setSelectedImages(
+                                  Array.from(
+                                    e.target.files ?? []
+                                  )
+                                );
+
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
 
                         <button
                           type="button"
                           onClick={() => {
-                            if (
-                              previewUrl
-                            ) {
-                              URL.revokeObjectURL(
-                                previewUrl
-                              );
-                            }
+                            previewUrls.forEach((url) =>
+                              URL.revokeObjectURL(url)
+                            );
 
-                            setImage(
-                              null
-                            );
-                            setPreviewUrl(
-                              ""
-                            );
+                            setImages([]);
+                            setPreviewUrls([]);
+                            setError("");
                           }}
                           className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900"
                         >
-                          Remove
+                          Remove all
                         </button>
                       </div>
 
                       <p className="mt-3 text-sm text-gray-500">
-                        {image?.name}
+                        {images.length}/5 images selected. The first image is the main product image.
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p className="font-medium text-gray-900">
-                        Drag and drop an image here
+                        Drag and drop product images here
                       </p>
 
                       <p className="mt-1 text-sm text-gray-500">
-                        JPG, PNG or WebP · Maximum 5 MB
+                        JPG, PNG or WebP · Maximum 5 MB each · Up to 5 images
                       </p>
 
-                      <label className="mt-4 inline-block cursor-pointer rounded-lg bg-black px-5 py-3 font-semibold text-white">
-                        Choose image
+                      <label className="mt-4 inline-block cursor-pointer rounded-lg bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800">
+                        Choose images
 
                         <input
                           type="file"
                           accept="image/jpeg,image/png,image/webp"
+                          multiple
                           className="hidden"
-                          onChange={(e) =>
-                            setSelectedImage(
-                              e.target
-                                .files?.[0] ||
-                                null
-                            )
-                          }
+                          onChange={(e) => {
+                            setSelectedImages(
+                              Array.from(
+                                e.target.files ?? []
+                              )
+                            );
+
+                            e.currentTarget.value = "";
+                          }}
                         />
                       </label>
                     </div>
@@ -903,4 +1003,4 @@ export default function NewProductPage() {
       </div>
     </main>
   );
-}
+} 

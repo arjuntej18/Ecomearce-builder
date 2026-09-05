@@ -1,15 +1,16 @@
-// Product detail page with variant selection, pricing and simple stock status.
-
 "use client";
 
+// Product detail page with image gallery, variant selection, pricing and stock status.
+
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { useParams, useRouter } from "next/navigation";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type ProductImage = {
+  id: string;
+  image_url: string;
+  sort_order: number;
+};
 
 type Product = {
   id: string;
@@ -17,6 +18,7 @@ type Product = {
   slug: string;
   description: string | null;
   main_image_url: string | null;
+  product_images: ProductImage[];
 };
 
 type Variant = {
@@ -53,6 +55,17 @@ export default function ProductPage() {
   const [selectedVariant, setSelectedVariant] =
     useState<Variant | null>(null);
 
+  const [selectedImageIndex, setSelectedImageIndex] =
+  useState(0);
+
+const [touchStartX, setTouchStartX] =
+  useState<number | null>(null);
+
+const [touchStartY, setTouchStartY] =
+  useState<number | null>(null);
+
+const [touchMoved, setTouchMoved] =
+  useState(false);
   const [loading, setLoading] =
     useState(true);
 
@@ -61,13 +74,27 @@ export default function ProductPage() {
 
   useEffect(() => {
     async function loadProduct() {
+      const supabase =
+        createSupabaseBrowserClient();
+
       const {
         data: productData,
         error: productError,
       } = await supabase
         .from("products")
         .select(
-          "id, name, slug, description, main_image_url"
+          `
+          id,
+          name,
+          slug,
+          description,
+          main_image_url,
+          product_images (
+            id,
+            image_url,
+            sort_order
+          )
+        `
         )
         .eq("slug", slug)
         .eq("is_active", true)
@@ -85,8 +112,8 @@ export default function ProductPage() {
       } = await supabase
         .from("product_variants")
         .select(
-  "id, sku, size, color, price, original_price, discount_percent, is_active"
-)
+          "id, sku, size, color, price, original_price, discount_percent, is_active"
+        )
         .eq("product_id", productData.id)
         .eq("is_active", true)
         .order("size", {
@@ -131,16 +158,34 @@ export default function ProductPage() {
         }
       }
 
-      setProduct(productData);
+      const sortedImages =
+        (
+          productData.product_images ??
+          []
+        )
+          .slice()
+          .sort(
+            (a, b) =>
+              a.sort_order - b.sort_order
+          );
+
+      const finalProduct: Product = {
+        ...productData,
+        product_images:
+          sortedImages,
+      };
+
+      setProduct(finalProduct);
       setVariants(loadedVariants);
       setInventory(loadedInventory);
 
-      if (loadedVariants.length) {
+      if (loadedVariants.length > 0) {
         setSelectedVariant(
           loadedVariants[0]
         );
       }
 
+      setSelectedImageIndex(0);
       setLoading(false);
     }
 
@@ -150,10 +195,12 @@ export default function ProductPage() {
   function getStock(
     variantId: string
   ) {
-    const stockRow = inventory.find(
-      (item) =>
-        item.variant_id === variantId
-    );
+    const stockRow =
+      inventory.find(
+        (item) =>
+          item.variant_id ===
+          variantId
+      );
 
     return Number(
       stockRow?.quantity ?? 0
@@ -163,9 +210,8 @@ export default function ProductPage() {
   function getStockText(
     variantId: string
   ) {
-    const stock = getStock(
-      variantId
-    );
+    const stock =
+      getStock(variantId);
 
     if (stock <= 0) {
       return "Out of Stock";
@@ -198,8 +244,11 @@ export default function ProductPage() {
     }
 
     if (
-      selectedVariant.price == null ||
-      Number(selectedVariant.price) <= 0
+      selectedVariant.price ==
+        null ||
+      Number(
+        selectedVariant.price
+      ) <= 0
     ) {
       alert(
         "This product has an invalid price."
@@ -218,7 +267,7 @@ export default function ProductPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-white p-10 text-gray-900">
+      <main className="min-h-screen bg-[#faeadf] p-10 text-[#4a2925]">
         Loading product...
       </main>
     );
@@ -226,21 +275,44 @@ export default function ProductPage() {
 
   if (!product) {
     return (
-      <main className="min-h-screen bg-white p-10 text-gray-900">
+      <main className="min-h-screen bg-[#faeadf] p-10 text-[#4a2925]">
         <div className="mx-auto max-w-6xl">
-          <div className="rounded-xl border border-gray-200 bg-white p-8">
+          <div className="rounded-xl border border-[#e5d7c6] bg-[#fffaf2] p-8">
             <h1 className="text-2xl font-bold">
               Product not found
             </h1>
 
-            <p className="mt-2 text-gray-600">
-              This product is unavailable or no longer active.
+            <p className="mt-2 text-[#765f52]">
+              This product is unavailable
+              or no longer active.
             </p>
           </div>
         </div>
       </main>
     );
   }
+
+  const galleryImages =
+    product.product_images.length >
+    0
+      ? product.product_images
+      : product.main_image_url
+        ? [
+            {
+              id: "main-image",
+              image_url:
+                product.main_image_url,
+              sort_order: 0,
+            },
+          ]
+        : [];
+
+  const currentImage =
+    galleryImages[
+      selectedImageIndex
+    ]?.image_url ??
+    galleryImages[0]?.image_url ??
+    null;
 
   const selectedPrice =
     selectedVariant?.price != null
@@ -276,83 +348,259 @@ export default function ProductPage() {
   const selectedOutOfStock =
     selectedStock <= 0;
 
+  function handleTouchStart(
+    event: React.TouchEvent<HTMLDivElement>
+  ) {
+    const touch = event.touches[0];
+
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
+    setTouchMoved(false);
+  }
+
+  function handleTouchMove(
+    event: React.TouchEvent<HTMLDivElement>
+  ) {
+    if (
+      touchStartX === null ||
+      touchStartY === null ||
+      galleryImages.length <= 1
+    ) {
+      return;
+    }
+
+    const touch = event.touches[0];
+
+    const deltaX =
+      touch.clientX - touchStartX;
+
+    const deltaY =
+      touch.clientY - touchStartY;
+
+    // Only use clearly horizontal gestures for image navigation.
+    if (
+      Math.abs(deltaX) < 45 ||
+      Math.abs(deltaX) <= Math.abs(deltaY)
+    ) {
+      return;
+    }
+
+    if (deltaX < 0) {
+      setSelectedImageIndex((current) =>
+        current >= galleryImages.length - 1
+          ? 0
+          : current + 1
+      );
+    } else {
+      setSelectedImageIndex((current) =>
+        current <= 0
+          ? galleryImages.length - 1
+          : current - 1
+      );
+    }
+
+    // Allow a continued drag to move through multiple images.
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
+    setTouchMoved(true);
+  }
+
+  function handleTouchEnd() {
+    setTouchStartX(null);
+    setTouchStartY(null);
+    setTouchMoved(false);
+  }
+
   return (
-    <main className="min-h-screen bg-white text-gray-900">
-      <div className="mx-auto max-w-6xl p-6">
-        <div className="grid gap-10 md:grid-cols-2">
-          {/* Image */}
+    <main className="min-h-screen bg-[#faeadf] text-[#4a2925]">
+      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
+        <div className="grid gap-10 lg:grid-cols-2">
+
+          {/* IMAGE GALLERY */}
           <div>
-            {product.main_image_url ? (
-              <img
-                src={
-                  product.main_image_url
-                }
-                alt={product.name}
-                className="w-full rounded-2xl border border-gray-200 object-cover"
-              />
-            ) : (
-              <div className="flex aspect-square items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 text-gray-500">
-                No image
+            <div
+              className={`relative overflow-hidden rounded-2xl border border-[#e2d4c5] bg-[#fffaf2] touch-pan-y ${
+                touchMoved ? "select-none" : ""
+              }`}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {currentImage ? (
+                <img
+                  src={currentImage}
+                  alt={product.name}
+                  draggable={false}
+                  className="aspect-square w-full object-cover select-none transition-opacity duration-150"
+                />
+              ) : (
+                <div className="flex aspect-square items-center justify-center text-[#8b776a]">
+                  No image
+                </div>
+              )}
+
+              {galleryImages.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Previous product image"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedImageIndex((current) =>
+                        current <= 0
+                          ? galleryImages.length - 1
+                          : current - 1
+                      );
+                    }}
+                    className="absolute left-3 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-lg text-white backdrop-blur-sm transition hover:bg-black/65 md:block"
+                  >
+                    ‹
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label="Next product image"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedImageIndex((current) =>
+                        current >= galleryImages.length - 1
+                          ? 0
+                          : current + 1
+                      );
+                    }}
+                    className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-lg text-white backdrop-blur-sm transition hover:bg-black/65 md:block"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Thumbnails */}
+            {galleryImages.length >
+              1 && (
+              <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
+                {galleryImages.map(
+                  (
+                    image,
+                    index
+                  ) => (
+                    <button
+                      key={image.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedImageIndex(
+                          index
+                        )
+                      }
+                      className={`w-20 min-w-20 overflow-hidden rounded-lg border-2 bg-[#fffaf2] transition ${
+                        selectedImageIndex ===
+                        index
+                          ? "border-[#72263a]"
+                          : "border-[#e2d4c5] hover:border-[#b59670]"
+                      }`}
+                      aria-label={`View image ${
+                        index + 1
+                      }`}
+                    >
+                      <img
+                        src={
+                          image.image_url
+                        }
+                        alt={`${product.name} ${
+                          index + 1
+                        }`}
+                        className="aspect-square w-full object-cover"
+                      />
+                    </button>
+                  )
+                )}
               </div>
+            )}
+
+            {galleryImages.length >
+              1 && (
+              <p className="mt-3 text-center text-xs text-[#8b776a]">
+                Image{" "}
+                {selectedImageIndex +
+                  1}{" "}
+                of{" "}
+                {galleryImages.length}
+              </p>
             )}
           </div>
 
-          {/* Details */}
+          {/* DETAILS */}
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#a17b4f]">
+              Setetha Vastram
+            </p>
+
+            <h1 className="text-3xl font-semibold tracking-tight text-[#4a2925] sm:text-4xl">
               {product.name}
             </h1>
 
-            <div className="mt-4">
-  {selectedVariant &&
-  selectedVariant.original_price != null &&
-  Number(
-    selectedVariant.discount_percent ?? 0
-  ) > 0 &&
-  Number(
-    selectedVariant.original_price
-  ) > Number(
-    selectedVariant.price ?? 0
-  ) ? (
-    <>
-      <p className="text-lg text-gray-500 line-through">
-        ₹
-        {Number(
-          selectedVariant.original_price
-        ).toFixed(2)}
-      </p>
+            {/* PRICE */}
+            <div className="mt-5">
+              {selectedVariant &&
+              selectedVariant.original_price !=
+                null &&
+              Number(
+                selectedVariant.discount_percent ??
+                  0
+              ) > 0 &&
+              Number(
+                selectedVariant.original_price
+              ) >
+                Number(
+                  selectedVariant.price ??
+                    0
+                ) ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-base text-[#9a8b82] line-through">
+                    ₹
+                    {Number(
+                      selectedVariant.original_price
+                    ).toFixed(2)}
+                  </span>
 
-      <p className="text-3xl font-bold text-gray-900">
-        ₹
-        {selectedPrice?.toFixed(2)}
-      </p>
+                  <span className="text-2xl font-bold text-[#72263a]">
+                    ₹
+                    {selectedPrice?.toFixed(
+                      2
+                    )}
+                  </span>
 
-      <p className="mt-1 text-sm font-bold text-green-600">
-        {Number(
-          selectedVariant.discount_percent
-        ).toFixed(0)}
-        % OFF
-      </p>
-    </>
-  ) : (
-    <p className="text-3xl font-bold text-gray-900">
-      {selectedPrice !== null
-        ? `₹${selectedPrice.toFixed(2)}`
-        : "Select an option"}
-    </p>
-  )}
-</div>
+                  <span className="rounded-md bg-[#eadfcf] px-2 py-1 text-sm font-bold text-[#9b7548]">
+                    {Number(
+                      selectedVariant.discount_percent
+                    ).toFixed(0)}
+                    % OFF
+                  </span>
+                </div>
+              ) : (
+                <p className="text-2xl font-bold text-[#72263a]">
+                  {selectedPrice !== null
+                    ? `₹${selectedPrice.toFixed(
+                        2
+                      )}`
+                    : "Select an option"}
+                </p>
+              )}
+            </div>
 
+            {/* DESCRIPTION */}
             {product.description && (
-              <p className="mt-5 leading-7 text-gray-700">
+              <p className="mt-6 leading-7 text-[#6d574e]">
                 {product.description}
               </p>
             )}
 
-            {/* Options */}
-            {variants.length > 0 && (
+            {/* OPTIONS */}
+            {variants.length >
+              0 && (
               <section className="mt-8">
-                <h2 className="mb-4 text-lg font-semibold text-gray-900">
+                <h2 className="mb-4 text-lg font-semibold text-[#4a2925]">
                   Choose your option
                 </h2>
 
@@ -364,7 +612,9 @@ export default function ProductPage() {
                         variant.color,
                       ]
                         .filter(Boolean)
-                        .join(" / ");
+                        .join(
+                          " / "
+                        );
 
                       const isSelected =
                         selectedVariant?.id ===
@@ -380,7 +630,9 @@ export default function ProductPage() {
 
                       return (
                         <button
-                          key={variant.id}
+                          key={
+                            variant.id
+                          }
                           type="button"
                           disabled={
                             outOfStock
@@ -392,10 +644,10 @@ export default function ProductPage() {
                           }
                           className={`min-w-[120px] rounded-lg border-2 px-4 py-3 text-left transition ${
                             isSelected
-                              ? "border-black bg-black text-white"
+                              ? "border-[#72263a] bg-[#72263a] text-white"
                               : outOfStock
-                              ? "border-gray-200 bg-gray-100 text-gray-400"
-                              : "border-gray-300 bg-white text-gray-900 hover:border-black"
+                              ? "border-[#e4ddd5] bg-[#f2ece5] text-[#aaa099]"
+                              : "border-[#d8cabb] bg-[#fffaf2] text-[#4a2925] hover:border-[#72263a]"
                           }`}
                         >
                           <div className="font-semibold">
@@ -408,15 +660,17 @@ export default function ProductPage() {
                               isSelected
                                 ? "text-white"
                                 : outOfStock
-                                ? "text-gray-400"
-                                : "text-gray-600"
+                                ? "text-[#aaa099]"
+                                : "text-[#6d574e]"
                             }`}
                           >
                             ₹
                             {Number(
                               variant.price ??
                                 0
-                            ).toFixed(2)}
+                            ).toFixed(
+                              2
+                            )}
                           </div>
 
                           <div
@@ -424,10 +678,10 @@ export default function ProductPage() {
                               isSelected
                                 ? "text-white"
                                 : outOfStock
-                                ? "text-gray-400"
+                                ? "text-[#aaa099]"
                                 : stock <= 5
-                                ? "text-gray-600"
-                                : "text-gray-500"
+                                ? "text-[#8a6c4c]"
+                                : "text-[#8b776a]"
                             }`}
                           >
                             {getStockText(
@@ -442,41 +696,43 @@ export default function ProductPage() {
               </section>
             )}
 
-            {/* Selection */}
-            <div className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="text-base font-semibold text-gray-900">
+            {/* SELECTION */}
+            <div className="mt-8 rounded-xl border border-[#e2d4c5] bg-[#fffaf2] p-5">
+              <h2 className="text-base font-semibold text-[#4a2925]">
                 Your selection
               </h2>
 
               {selectedVariant ? (
                 <div className="mt-4 space-y-3 text-sm">
                   <div className="flex justify-between gap-4">
-                    <span className="text-gray-600">
+                    <span className="text-[#7b665c]">
                       Product
                     </span>
 
-                    <span className="font-medium text-gray-900">
-                      {product.name}
+                    <span className="font-medium text-[#4a2925]">
+                      {
+                        product.name
+                      }
                     </span>
                   </div>
 
                   <div className="flex justify-between gap-4">
-                    <span className="text-gray-600">
+                    <span className="text-[#7b665c]">
                       Option
                     </span>
 
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-[#4a2925]">
                       {selectedLabel ||
                         selectedVariant.sku}
                     </span>
                   </div>
 
                   <div className="flex justify-between gap-4">
-                    <span className="text-gray-600">
+                    <span className="text-[#7b665c]">
                       Code
                     </span>
 
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-[#4a2925]">
                       {
                         selectedVariant.sku
                       }
@@ -484,15 +740,15 @@ export default function ProductPage() {
                   </div>
 
                   <div className="flex justify-between gap-4">
-                    <span className="text-gray-600">
+                    <span className="text-[#7b665c]">
                       Availability
                     </span>
 
                     <span
                       className={`font-semibold ${
                         selectedOutOfStock
-                          ? "text-gray-500"
-                          : "text-gray-900"
+                          ? "text-[#8b776a]"
+                          : "text-[#72263a]"
                       }`}
                     >
                       {
@@ -501,12 +757,12 @@ export default function ProductPage() {
                     </span>
                   </div>
 
-                  <div className="flex justify-between border-t border-gray-200 pt-3">
-                    <span className="font-semibold text-gray-900">
+                  <div className="flex justify-between border-t border-[#e5d9cc] pt-3">
+                    <span className="font-semibold text-[#4a2925]">
                       Price
                     </span>
 
-                    <span className="font-bold text-gray-900">
+                    <span className="font-bold text-[#72263a]">
                       ₹
                       {selectedPrice?.toFixed(
                         2
@@ -515,13 +771,14 @@ export default function ProductPage() {
                   </div>
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-gray-600">
-                  Select an option before buying.
+                <p className="mt-2 text-sm text-[#7b665c]">
+                  Select an option before
+                  buying.
                 </p>
               )}
             </div>
 
-            {/* Buy button */}
+            {/* BUY BUTTON */}
             <button
               type="button"
               onClick={
@@ -532,7 +789,7 @@ export default function ProductPage() {
                 !selectedVariant ||
                 selectedOutOfStock
               }
-              className="mt-6 w-full rounded-xl bg-black px-6 py-4 text-base font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+              className="mt-6 w-full rounded-xl bg-[#72263a] px-6 py-4 text-base font-semibold text-white transition hover:bg-[#5d1e2f] disabled:cursor-not-allowed disabled:bg-[#b8aaa0]"
             >
               {buying
                 ? "Opening checkout..."
@@ -549,4 +806,4 @@ export default function ProductPage() {
       </div>
     </main>
   );
-}
+}   

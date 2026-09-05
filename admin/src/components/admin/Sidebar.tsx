@@ -11,7 +11,7 @@ const items = [
   { name: "Customers", href: "/admin/customers" },
   { name: "Inventory", href: "/admin/inventory" },
   { name: "Coupons", href: "/admin/coupons" },
-  { name: "Shop Preview", href: "/shop" },
+  { name: "Shop Preview", href: "/admin/shop" },
 ];
 
 export default function Sidebar() {

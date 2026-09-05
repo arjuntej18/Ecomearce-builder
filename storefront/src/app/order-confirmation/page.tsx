@@ -1,8 +1,12 @@
-// Displays the confirmed order and its expected delivery date.
-
 "use client";
 
-import { useEffect, useState } from "react";
+// Displays the confirmed order and expected delivery date.
+
+import {
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -14,8 +18,9 @@ type Order = {
   total_amount: number;
 };
 
-export default function OrderConfirmationPage() {
-  const searchParams = useSearchParams();
+function OrderConfirmationContent() {
+  const searchParams =
+    useSearchParams();
 
   const orderId =
     searchParams.get("orderId");
@@ -69,6 +74,7 @@ export default function OrderConfirmationPage() {
         setOrder(result.order);
       } catch (error) {
         console.error(error);
+
         setError(
           "Unable to load order details."
         );
@@ -106,7 +112,6 @@ export default function OrderConfirmationPage() {
     <main className="min-h-screen bg-gray-50 px-4 py-12">
       <div className="mx-auto max-w-2xl">
         <div className="overflow-hidden rounded-2xl bg-white shadow-lg">
-          {/* Success header */}
           <div className="bg-green-600 px-6 py-10 text-center text-white">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white text-3xl font-bold text-green-600">
               ✓
@@ -121,7 +126,6 @@ export default function OrderConfirmationPage() {
             </p>
           </div>
 
-          {/* Order details */}
           <div className="p-6 sm:p-8">
             {error && (
               <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -158,7 +162,7 @@ export default function OrderConfirmationPage() {
 
                   {loading ? (
                     <p className="mt-1 text-sm text-gray-500">
-                      Calculating delivery date...
+                      Loading delivery date...
                     </p>
                   ) : expectedDelivery ? (
                     <p className="mt-1 text-lg font-bold text-gray-900">
@@ -192,7 +196,6 @@ export default function OrderConfirmationPage() {
               Keep your order number for future reference.
             </p>
 
-            {/* Actions */}
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
               <Link
                 href="/shop"
@@ -222,5 +225,21 @@ export default function OrderConfirmationPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function OrderConfirmationPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gray-50 px-4 py-12">
+          <div className="mx-auto max-w-2xl">
+            Loading order confirmation...
+          </div>
+        </main>
+      }
+    >
+      <OrderConfirmationContent />
+    </Suspense>
   );
 }

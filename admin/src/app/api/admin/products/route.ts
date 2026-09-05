@@ -1,5 +1,5 @@
 // Admin-only product creation API.
-// Creates image + product + variants + inventory securely.
+// Creates a product with multiple images, variants and inventory securely.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -19,8 +19,29 @@ type VariantInput = {
   stock: string | number;
 };
 
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_IMAGES = 5;
+
+function getExtension(type: string) {
+  if (type === "image/jpeg") {
+    return "jpg";
+  }
+
+  if (type === "image/png") {
+    return "png";
+  }
+
+  return "webp";
+}
+
 export async function POST(request: Request) {
-  let uploadedImagePath: string | null = null;
+  const uploadedImagePaths: string[] = [];
   let createdProductId: string | null = null;
 
   try {
@@ -97,13 +118,45 @@ export async function POST(request: Request) {
       formData.get("variants") || "[]"
     );
 
-    const image = formData.get("image");
+    // Read all uploaded images.
+    const imageEntries = formData
+      .getAll("images")
+      .filter(
+        (value): value is File =>
+          value instanceof File &&
+          value.size > 0
+      );
+
+    // Backward compatibility with old single-image requests.
+    if (
+      imageEntries.length === 0
+    ) {
+      const legacyImage =
+        formData.get("image");
+
+      if (
+        legacyImage instanceof File &&
+        legacyImage.size > 0
+      ) {
+        imageEntries.push(legacyImage);
+      }
+    }
 
     if (!name || !slug || !basePrice) {
       return NextResponse.json(
         {
           error:
             "Name, slug and base price are required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (imageEntries.length > MAX_IMAGES) {
+      return NextResponse.json(
+        {
+          error:
+            `A maximum of ${MAX_IMAGES} images are allowed.`,
         },
         { status: 400 }
       );
@@ -155,62 +208,72 @@ export async function POST(request: Request) {
       }
     }
 
-    // Upload image if provided.
-    let mainImageUrl: string | null = null;
+    // Upload product images.
+    const uploadedImages: {
+      path: string;
+      publicUrl: string;
+    }[] = [];
 
-    if (image instanceof File) {
-      const allowedTypes = [
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ];
+    for (
+      let index = 0;
+      index < imageEntries.length;
+      index++
+    ) {
+      const image = imageEntries[index];
 
-      if (!allowedTypes.includes(image.type)) {
+      if (
+        !ALLOWED_IMAGE_TYPES.includes(
+          image.type
+        )
+      ) {
         return NextResponse.json(
           {
             error:
-              "Only JPG, PNG and WebP images are allowed.",
+              `Image ${index + 1} must be JPG, PNG or WebP.`,
           },
           { status: 400 }
         );
       }
 
-      if (image.size > 5 * 1024 * 1024) {
+      if (
+        image.size > MAX_IMAGE_SIZE
+      ) {
         return NextResponse.json(
           {
             error:
-              "Image must be 5 MB or smaller.",
+              `Image ${index + 1} must be 5 MB or smaller.`,
           },
           { status: 400 }
         );
       }
 
       const extension =
-        image.type === "image/jpeg"
-          ? "jpg"
-          : image.type === "image/png"
-            ? "png"
-            : "webp";
+        getExtension(image.type);
 
-      const filePath = `products/${crypto.randomUUID()}.${extension}`;
+      const filePath =
+        `products/${crypto.randomUUID()}.${extension}`;
 
-      const { error: uploadError } =
-        await supabaseAdmin.storage
-          .from("public-image")
-          .upload(
-            filePath,
-            image,
-            {
-              contentType:
-                image.type,
-              cacheControl:
-                "3600",
-              upsert: false,
-            }
-          );
+      const {
+        error: uploadError,
+      } = await supabaseAdmin.storage
+        .from("public-image")
+        .upload(
+          filePath,
+          image,
+          {
+            contentType:
+              image.type,
+            cacheControl:
+              "3600",
+            upsert: false,
+          }
+        );
 
       if (uploadError) {
-        console.error(uploadError);
+        console.error(
+          "Image upload error:",
+          uploadError
+        );
 
         return NextResponse.json(
           {
@@ -221,18 +284,32 @@ export async function POST(request: Request) {
         );
       }
 
-      uploadedImagePath = filePath;
+      uploadedImagePaths.push(
+        filePath
+      );
 
       const {
         data: publicUrlData,
       } =
         supabaseAdmin.storage
           .from("public-image")
-          .getPublicUrl(filePath);
+          .getPublicUrl(
+            filePath
+          );
 
-      mainImageUrl =
-        publicUrlData.publicUrl;
+      uploadedImages.push({
+        path: filePath,
+        publicUrl:
+          publicUrlData.publicUrl,
+      });
     }
+
+    // First image is the main product image.
+    const mainImageUrl =
+      uploadedImages.length > 0
+        ? uploadedImages[0]
+            .publicUrl
+        : null;
 
     // Create product.
     const {
@@ -263,13 +340,20 @@ export async function POST(request: Request) {
       .select("id")
       .single();
 
-    if (productError || !product) {
+    if (
+      productError ||
+      !product
+    ) {
       console.error(productError);
 
-      if (uploadedImagePath) {
+      if (
+        uploadedImagePaths.length > 0
+      ) {
         await supabaseAdmin.storage
-          .from("public-image") 
-          .remove([uploadedImagePath]);
+          .from("public-image")
+          .remove(
+            uploadedImagePaths
+          );
       }
 
       return NextResponse.json(
@@ -282,24 +366,85 @@ export async function POST(request: Request) {
       );
     }
 
-    createdProductId = product.id;
+    createdProductId =
+      product.id;
+
+    // Save all gallery images.
+    if (
+      uploadedImages.length > 0
+    ) {
+      const imageRows =
+        uploadedImages.map(
+          (image, index) => ({
+            product_id:
+              product.id,
+            image_url:
+              image.publicUrl,
+            sort_order:
+              index,
+          })
+        );
+
+      const {
+        error: imageRowsError,
+      } =
+        await supabaseAdmin
+          .from("product_images")
+          .insert(
+            imageRows
+          );
+
+      if (imageRowsError) {
+        console.error(
+          "Product images error:",
+          imageRowsError
+        );
+
+        await supabaseAdmin
+          .from("products")
+          .delete()
+          .eq(
+            "id",
+            product.id
+          );
+
+        await supabaseAdmin.storage
+          .from("public-image")
+          .remove(
+            uploadedImagePaths
+          );
+
+        return NextResponse.json(
+          {
+            error:
+              imageRowsError.message ||
+              "Unable to save product images.",
+          },
+          { status: 500 }
+        );
+      }
+    }
 
     // Create variants.
     const variantRows =
-      variants.map((variant) => ({
-        product_id:
-          product.id,
-        size:
-          variant.size.trim(),
-        color:
-          variant.color.trim(),
-        sku:
-          variant.sku.trim(),
-        price:
-          Number(variant.price),
-        image_url: null,
-        is_active: true,
-      }));
+      variants.map(
+        (variant) => ({
+          product_id:
+            product.id,
+          size:
+            variant.size.trim(),
+          color:
+            variant.color.trim(),
+          sku:
+            variant.sku.trim(),
+          price:
+            Number(
+              variant.price
+            ),
+          image_url: null,
+          is_active: true,
+        })
+      );
 
     const {
       data: createdVariants,
@@ -307,7 +452,9 @@ export async function POST(request: Request) {
     } =
       await supabaseAdmin
         .from("product_variants")
-        .insert(variantRows)
+        .insert(
+          variantRows
+        )
         .select("id");
 
     if (
@@ -316,10 +463,20 @@ export async function POST(request: Request) {
       createdVariants.length !==
         variants.length
     ) {
-      console.error(variantError);
+      console.error(
+        variantError
+      );
 
       await supabaseAdmin
         .from("product_variants")
+        .delete()
+        .eq(
+          "product_id",
+          product.id
+        );
+
+      await supabaseAdmin
+        .from("product_images")
         .delete()
         .eq(
           "product_id",
@@ -334,11 +491,14 @@ export async function POST(request: Request) {
           product.id
         );
 
-      if (uploadedImagePath) {
+      if (
+        uploadedImagePaths.length > 0
+      ) {
         await supabaseAdmin.storage
           .from("public-image")
-
-          .remove([uploadedImagePath]);
+          .remove(
+            uploadedImagePaths
+          );
       }
 
       return NextResponse.json(
@@ -354,12 +514,16 @@ export async function POST(request: Request) {
     // Create inventory.
     const inventoryRows =
       createdVariants.map(
-        (variant, index) => ({
+        (
+          variant,
+          index
+        ) => ({
           variant_id:
             variant.id,
           quantity:
             Number(
-              variants[index].stock
+              variants[index]
+                .stock
             ),
           low_stock_threshold: 5,
         })
@@ -367,12 +531,17 @@ export async function POST(request: Request) {
 
     const {
       error: inventoryError,
-    } = await supabaseAdmin
-      .from("inventory")
-      .insert(inventoryRows);
+    } =
+      await supabaseAdmin
+        .from("inventory")
+        .insert(
+          inventoryRows
+        );
 
     if (inventoryError) {
-      console.error(inventoryError);
+      console.error(
+        inventoryError
+      );
 
       await supabaseAdmin
         .from("inventory")
@@ -394,6 +563,14 @@ export async function POST(request: Request) {
         );
 
       await supabaseAdmin
+        .from("product_images")
+        .delete()
+        .eq(
+          "product_id",
+          product.id
+        );
+
+      await supabaseAdmin
         .from("products")
         .delete()
         .eq(
@@ -401,11 +578,14 @@ export async function POST(request: Request) {
           product.id
         );
 
-      if (uploadedImagePath) {
+      if (
+        uploadedImagePaths.length > 0
+      ) {
         await supabaseAdmin.storage
           .from("public-image")
-
-          .remove([uploadedImagePath]);
+          .remove(
+            uploadedImagePaths
+          );
       }
 
       return NextResponse.json(
@@ -420,16 +600,56 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      productId: product.id,
+      productId:
+        product.id,
       variantCount:
         createdVariants.length,
       imageUrl:
         mainImageUrl,
+      imageCount:
+        uploadedImages.length,
     });
   } catch (error) {
     console.error(error);
 
     if (createdProductId) {
+      await supabaseAdmin
+        .from("inventory")
+        .delete()
+        .in(
+          "variant_id",
+          (
+            await supabaseAdmin
+              .from(
+                "product_variants"
+              )
+              .select("id")
+              .eq(
+                "product_id",
+                createdProductId
+              )
+          ).data?.map(
+            (variant) =>
+              variant.id
+          ) ?? []
+        );
+
+      await supabaseAdmin
+        .from("product_variants")
+        .delete()
+        .eq(
+          "product_id",
+          createdProductId
+        );
+
+      await supabaseAdmin
+        .from("product_images")
+        .delete()
+        .eq(
+          "product_id",
+          createdProductId
+        );
+
       await supabaseAdmin
         .from("products")
         .delete()
@@ -439,12 +659,14 @@ export async function POST(request: Request) {
         );
     }
 
-    if (uploadedImagePath) {
+    if (
+      uploadedImagePaths.length > 0
+    ) {
       await supabaseAdmin.storage
         .from("public-image")
-        .remove([
-          uploadedImagePath,
-        ]);
+        .remove(
+          uploadedImagePaths
+        );
     }
 
     return NextResponse.json(
