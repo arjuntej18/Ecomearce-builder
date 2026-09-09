@@ -608,7 +608,9 @@ export async function PATCH(
       variants:
         updatedVariants ?? [],
     });
-  } catch (error) {
+  } 
+  
+  catch (error) {
     console.error(error);
 
     return NextResponse.json(
@@ -616,6 +618,94 @@ export async function PATCH(
         error:
           "Unable to update product.",
       },
+      { status: 500 }
+    );
+
+  }
+}
+export async function DELETE(
+  _request: Request,
+  { params }: Params
+) {
+  try {
+    if (!(await verifyAdmin())) {
+      return NextResponse.json(
+        { error: "Admin access required." },
+        { status: 403 }
+      );
+    }
+
+    const { id } = await params;
+
+    // Get product images first so we can remove them from storage.
+    const { data: images, error: imagesError } = await supabaseAdmin
+      .from("product_images")
+      .select("image_url")
+      .eq("product_id", id);
+
+    if (imagesError) {
+      console.error(imagesError);
+      return NextResponse.json(
+        { error: "Unable to load product images." },
+        { status: 500 }
+      );
+    }
+
+    // Delete product. Related variants, inventory and product_images
+    // should be removed by the database foreign-key cascade.
+    const { error: deleteError } = await supabaseAdmin
+      .from("products")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error(deleteError);
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete product. It may be referenced by existing orders.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Remove uploaded files from Supabase Storage.
+    if (images?.length) {
+      const paths = images
+        .map((image) => {
+          const marker = "/storage/v1/object/public/public-image/";
+          const index = image.image_url.indexOf(marker);
+
+          if (index === -1) return null;
+
+          return decodeURIComponent(
+            image.image_url.slice(index + marker.length)
+          );
+        })
+        .filter((path): path is string => Boolean(path));
+
+      if (paths.length) {
+        const { error: storageError } =
+          await supabaseAdmin.storage
+            .from("public-image")
+            .remove(paths);
+
+        if (storageError) {
+          console.error(storageError);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Product deleted successfully.",
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      { error: "Unable to delete product." },
       { status: 500 }
     );
   }

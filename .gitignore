@@ -1,6 +1,2 @@
-.next/
-admin/**/.next/
-storefront/**/.next/
-.env
-.env.local
-*.env
+
+admin/admin/.next/

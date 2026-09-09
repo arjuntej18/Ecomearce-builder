@@ -297,7 +297,7 @@ export default function StorefrontHeader() {
   return (
     <>
       <header
-        className={`fixed left-0 right-0 top-0 z-50 border-b border-[#d8c1a9] bg-[#faeadf] transition-transform duration-300 ${
+        className={`fixed left-0 right-0 top-0 z-50 border-b-2 border-[#d6bda8] bg-[#faeadf] transition-transform duration-300 ${
           headerVisible
             ? "translate-y-0"
             : "-translate-y-full"

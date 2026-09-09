@@ -48,3 +48,87 @@ body {
     animation: none;
   }
 }
+[data-hero-item] {
+  will-change: opacity, transform, filter;
+  transition:
+    opacity 120ms linear,
+    transform 120ms linear,
+    filter 120ms linear;
+}
+
+/* Product card → product page transition */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 420ms;
+}
+
+::view-transition-old(root) {
+  animation-name: product-fade-out;
+}
+
+::view-transition-new(root) {
+  animation-name: product-fade-in;
+}
+
+::view-transition-group(*) {
+  animation-duration: 420ms;
+}
+
+@keyframes product-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes product-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Premium product page reveal */
+.product-page-reveal {
+  animation: product-page-reveal 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes product-page-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.product-image-reveal {
+  animation: product-image-reveal 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes product-image-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

@@ -307,10 +307,13 @@ function CheckoutPageContent() {
         );
         return;
       }
+      
+      {message && (
+  <div className="font-serif text-xl italic text-gray-600">
+    {message}
+  </div>
+)}
 
-      setMessage(
-        "OTP sent. Check your email."
-      );
 
       setStep("otp");
     } catch (err) {
@@ -678,109 +681,100 @@ function CheckoutPageContent() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-3xl font-bold text-gray-900">
-        Checkout
-      </h1>
+<main className="min-h-screen bg-[#0b0b0b] px-4 pb-28 pt-[100px] text-white sm:px-6 sm:pb-12 sm:pt-8">
+        <h1 className="font-serif text-5xl font-medium tracking-tight text-black sm:text-6xl">
+  Checkout
+</h1>
 
       {isDirectBuy && (
-        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-          Buying the selected product only.
-        </div>
-      )}
+  <div className="mt-4 font-serif text-[24px] italic text-gray-600">
+    Buying the selected product only.
+  </div>
+)}
 
-      {/* Coupon */}
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="font-semibold text-gray-900">
-          Have a coupon?
-        </h2>
 
-        <div className="mt-3 flex gap-3">
-          <input
-            value={couponCode}
-            onChange={(event) => {
-              setCouponCode(
-                event.target.value
-                  .toUpperCase()
-                  .replace(
-                    /\s/g,
-                    ""
-                  )
-              );
+{/* Coupon */}
+<section className="mt-6 rounded-[24px] border border-white/10 bg-white/[0.06] p-5 shadow-[0_8px_30px_rgba(0,0,0,0.18)] backdrop-blur-2xl">
+  <h2 className="font-medium tracking-wide text-white">
+    Have a coupon?
+  </h2>
 
-              setCouponMessage("");
-              setCouponError("");
-              setPricing(null);
-            }}
-            placeholder="Enter coupon code"
-            className="min-w-0 flex-1 rounded-lg border border-gray-300 p-3 text-gray-900"
-          />
+  <div className="mt-4 flex gap-3">
+    <input
+      value={couponCode}
+      onChange={(event) => {
+        setCouponCode(
+          event.target.value
+            .toUpperCase()
+            .replace(/\s/g, "")
+        );
 
-          <button
-            type="button"
-            onClick={validateCoupon}
-            disabled={couponLoading}
-            className="rounded-lg border-2 border-green-600 bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700 disabled:border-gray-400 disabled:bg-gray-400"
-          >
-            {couponLoading
-              ? "Checking..."
-              : "Apply"}
-          </button>
-        </div>
+        setCouponMessage("");
+        setCouponError("");
+        setPricing(null);
+      }}
+      placeholder="Enter coupon code"
+      className="min-w-0 flex-1 rounded-[18px] border border-white/15 bg-white/[0.08] px-4 py-3.5 text-white placeholder:text-white/40 outline-none backdrop-blur-xl transition focus:border-white/35 focus:bg-white/[0.12]"
+    />
 
-        {couponMessage && (
-          <p className="mt-3 text-sm font-medium text-green-700">
-            {couponMessage}
-          </p>
-        )}
+    <button
+      type="button"
+      onClick={validateCoupon}
+      disabled={couponLoading}
+      className="rounded-[999px] border border-white/20 bg-white/[0.10] px-7 py-3.5 font-semibold text-white backdrop-blur-xl transition hover:bg-white/[0.16] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {couponLoading
+        ? "Checking..."
+        : "Apply"}
+    </button>
+  </div>
 
-        {couponError && (
-          <p className="mt-3 text-sm text-red-600">
-            {couponError}
-          </p>
-        )}
+  {couponMessage && (
+    <p className="mt-3 text-sm font-medium text-green-400">
+      {couponMessage}
+    </p>
+  )}
 
-        {pricing && (
-          <div className="mt-4 space-y-2 border-t pt-4 text-sm">
-            <div className="flex justify-between">
-              <span>
-                Subtotal
-              </span>
+  {couponError && (
+    <p className="mt-3 text-sm text-red-400">
+      {couponError}
+    </p>
+  )}
 
-              <span>
-                ₹
-                {pricing.subtotal.toFixed(
-                  2
-                )}
-              </span>
-            </div>
+  {pricing && (
+    <div className="mt-5 space-y-3 border-t border-white/10 pt-4 text-sm text-white/75">
+      <div className="flex justify-between">
+        <span>Subtotal</span>
+        <span>
+          ₹{pricing.subtotal.toFixed(2)}
+        </span>
+      </div>
 
-            <div className="flex justify-between text-green-700">
-              <span>
-                Discount
-              </span>
+      <div className="flex justify-between text-green-400">
+  <span>Discount</span>
+  <span>
+    -₹{pricing.discount.toFixed(2)}
+  </span>
+</div>
 
-              <span>
-                -₹
-                {pricing.discount.toFixed(
-                  2
-                )}
-              </span>
-            </div>
+<div className="flex justify-between text-sm text-green-300">
+  <span>You saved</span>
+  <span>
+    {pricing.subtotal > 0
+      ? `${((pricing.discount / pricing.subtotal) * 100).toFixed(0)}% OFF`
+      : "0% OFF"}
+  </span>
+</div>
 
-            <div className="flex justify-between border-t pt-2 text-base font-bold">
-              <span>Total</span>
-
-              <span>
-                ₹
-                {pricing.total.toFixed(
-                  2
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-      </section>
+      <div className="flex justify-between border-t border-white/10 pt-3 text-base font-semibold text-white">
+        <span>Total</span>
+        <span>
+          ₹{pricing.total.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  )}
+</section>
 
       {step === "details" && (
         <form
@@ -795,7 +789,7 @@ function CheckoutPageContent() {
             value={customer.name}
             onChange={handleChange}
             placeholder="Full name"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
             required
           />
 
@@ -805,7 +799,7 @@ function CheckoutPageContent() {
             value={customer.email}
             onChange={handleChange}
             placeholder="Email"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
             required
           />
 
@@ -815,7 +809,7 @@ function CheckoutPageContent() {
             value={customer.phone}
             onChange={handleChange}
             placeholder="Mobile number"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
             required
           />
 
@@ -825,7 +819,7 @@ function CheckoutPageContent() {
               handleUseLocation
             }
             disabled={loading}
-            className="w-full rounded border px-6 py-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
           >
             {loading
               ? "Getting location..."
@@ -840,7 +834,7 @@ function CheckoutPageContent() {
             }
             onChange={handleChange}
             placeholder="Address line 1"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
             required
           />
 
@@ -852,7 +846,7 @@ function CheckoutPageContent() {
             }
             onChange={handleChange}
             placeholder="Address line 2 (optional)"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
           />
 
           <div className="grid gap-4 md:grid-cols-3">
@@ -862,7 +856,7 @@ function CheckoutPageContent() {
               value={customer.city}
               onChange={handleChange}
               placeholder="City"
-              className="w-full rounded border p-3"
+              className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
               required
             />
 
@@ -872,7 +866,7 @@ function CheckoutPageContent() {
               value={customer.state}
               onChange={handleChange}
               placeholder="State"
-              className="w-full rounded border p-3"
+              className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
               required
             />
 
@@ -884,7 +878,7 @@ function CheckoutPageContent() {
               }
               onChange={handleChange}
               placeholder="Postal code"
-              className="w-full rounded border p-3"
+              className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
               inputMode="numeric"
               required
             />
@@ -893,8 +887,7 @@ function CheckoutPageContent() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl border-2 border-green-600 bg-green-600 px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-green-700 disabled:border-gray-400 disabled:bg-gray-400"
-          >
+className="w-full rounded-[999px] border border-green-400/30 bg-green-500/80 px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_30px_rgba(34,197,94,0.22)] backdrop-blur-xl transition hover:bg-green-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-600">
             {loading
               ? "Sending OTP..."
               : "Continue"}
@@ -905,7 +898,7 @@ function CheckoutPageContent() {
       {step === "otp" && (
         <form
           onSubmit={handleOtpSubmit}
-          className="mt-8 space-y-4"
+          className="mx-auto mt-10 max-w-md space-y-10 rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.25)] backdrop-blur-2xl sm:p-8"
         >
           <p>
             Enter the OTP sent to{" "}
@@ -926,14 +919,14 @@ function CheckoutPageContent() {
             autoComplete="one-time-code"
             maxLength={6}
             placeholder="Enter OTP"
-            className="w-full rounded border p-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
             required
           />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl border-2 border-green-600 bg-green-600 px-6 py-4 text-base font-semibold text-white shadow-sm hover:bg-green-700 disabled:border-gray-400 disabled:bg-gray-400"
+            className="w-full rounded-[999px] border border-green-400/30 bg-green-500/80 px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_30px_rgba(34,197,94,0.22)] backdrop-blur-xl transition hover:bg-green-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-600"
           >
             {loading
               ? "Verifying..."
@@ -948,7 +941,7 @@ function CheckoutPageContent() {
               setError("");
               setMessage("");
             }}
-            className="w-full rounded border px-6 py-3"
+            className="w-full rounded-[18px] border border-white/15 bg-white/[0.08] px-4 py-4 text-white placeholder:text-white/40 outline-none backdrop-blur-xl transition focus:border-white/35 focus:bg-white/[0.12]"
           >
             Back
           </button>

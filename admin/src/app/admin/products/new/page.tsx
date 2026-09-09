@@ -1,6 +1,6 @@
-// Creates a product with category, multiple images, variants and stock.
-
 "use client";
+
+// Creates a product with a reviewable storefront-style preview before publishing.
 
 import {
   DragEvent,
@@ -23,6 +23,8 @@ type VariantForm = {
   price: string;
   stock: string;
 };
+
+type PreviewMode = "edit" | "preview";
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -59,7 +61,17 @@ export default function NewProductPage() {
     ]);
 
   const [images, setImages] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [previewUrls, setPreviewUrls] =
+    useState<string[]>([]);
+
+  const [mode, setMode] =
+    useState<PreviewMode>("edit");
+
+  const [previewImageIndex, setPreviewImageIndex] =
+    useState(0);
+
+  const [previewVariantIndex, setPreviewVariantIndex] =
+    useState(0);
 
   useEffect(() => {
     async function loadCategories() {
@@ -74,8 +86,7 @@ export default function NewProductPage() {
           }
         );
 
-        const result =
-          await response.json();
+        const result = await response.json();
 
         if (!response.ok) {
           setError(
@@ -104,10 +115,11 @@ export default function NewProductPage() {
 
   useEffect(() => {
     return () => {
-      previewUrls.forEach((url) => {
-        URL.revokeObjectURL(url);
-      });
+      previewUrls.forEach((url) =>
+        URL.revokeObjectURL(url)
+      );
     };
+
     // Preview URLs are intentionally cleaned up on unmount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -160,6 +172,18 @@ export default function NewProductPage() {
     setVariants((prev) =>
       prev.filter((_, i) => i !== index)
     );
+
+    setPreviewVariantIndex((current) => {
+      if (current === index) {
+        return 0;
+      }
+
+      if (current > index) {
+        return current - 1;
+      }
+
+      return current;
+    });
   }
 
   function setSelectedImages(files: File[]) {
@@ -195,7 +219,9 @@ export default function NewProductPage() {
     }
 
     if (validationErrors.length > 0) {
-      setError(validationErrors.join(" "));
+      setError(
+        validationErrors.join(" ")
+      );
     } else {
       setError("");
     }
@@ -211,34 +237,43 @@ export default function NewProductPage() {
       )
     );
 
-    const newUniqueFiles = validFiles.filter((file) => {
-      const key = `${file.name}-${file.size}-${file.lastModified}`;
+    const newUniqueFiles =
+      validFiles.filter((file) => {
+        const key = `${file.name}-${file.size}-${file.lastModified}`;
 
-      if (existingKeys.has(key)) {
-        return false;
-      }
+        if (existingKeys.has(key)) {
+          return false;
+        }
 
-      existingKeys.add(key);
-      return true;
-    });
+        existingKeys.add(key);
+        return true;
+      });
 
     const remainingSlots = Math.max(
       0,
       5 - images.length
     );
 
-    const filesToAdd = newUniqueFiles.slice(
-      0,
-      remainingSlots
-    );
+    const filesToAdd =
+      newUniqueFiles.slice(
+        0,
+        remainingSlots
+      );
 
     if (filesToAdd.length === 0) {
-      setError("You can upload a maximum of 5 unique images.");
+      setError(
+        "You can upload a maximum of 5 unique images."
+      );
       return;
     }
 
-    if (filesToAdd.length < newUniqueFiles.length) {
-      setError("You can upload a maximum of 5 images.");
+    if (
+      filesToAdd.length <
+      newUniqueFiles.length
+    ) {
+      setError(
+        "You can upload a maximum of 5 images."
+      );
     }
 
     setImages((prev) => [
@@ -252,6 +287,14 @@ export default function NewProductPage() {
         URL.createObjectURL(file)
       ),
     ]);
+
+    setPreviewImageIndex((current) => {
+      if (images.length === 0) {
+        return 0;
+      }
+
+      return current;
+    });
   }
 
   function removeImage(index: number) {
@@ -268,6 +311,24 @@ export default function NewProductPage() {
     setImages((prev) =>
       prev.filter((_, i) => i !== index)
     );
+
+    setPreviewImageIndex((current) => {
+      if (current === index) {
+        return Math.max(
+          0,
+          Math.min(
+            current,
+            previewUrls.length - 2
+          )
+        );
+      }
+
+      if (current > index) {
+        return current - 1;
+      }
+
+      return current;
+    });
   }
 
   function handleDrop(
@@ -282,7 +343,95 @@ export default function NewProductPage() {
     setSelectedImages(files);
   }
 
-  async function handleSubmit(
+  function validateBeforePreview() {
+    setError("");
+
+    if (!form.name.trim()) {
+      setError(
+        "Please enter a product name."
+      );
+      return false;
+    }
+
+    if (!form.slug.trim()) {
+      setError(
+        "Please enter a product slug."
+      );
+      return false;
+    }
+
+    if (!form.base_price.trim()) {
+      setError(
+        "Please enter a base price."
+      );
+      return false;
+    }
+
+    if (!form.category_id) {
+      setError(
+        "Please select a category."
+      );
+      return false;
+    }
+
+    if (!variants.length) {
+      setError(
+        "Add at least one variant."
+      );
+      return false;
+    }
+
+    for (
+      let index = 0;
+      index < variants.length;
+      index++
+    ) {
+      const variant =
+        variants[index];
+
+      if (
+        !variant.color.trim() ||
+        !variant.size.trim() ||
+        !variant.sku.trim() ||
+        Number(variant.price) <= 0 ||
+        Number(variant.stock) < 0
+      ) {
+        setError(
+          `Variant ${index + 1} needs color, size, code, valid price and valid stock.`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function handlePreview() {
+    if (!validateBeforePreview()) {
+      return;
+    }
+
+    setPreviewImageIndex(0);
+    setPreviewVariantIndex(0);
+    setMode("preview");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function handleBackToEdit() {
+    setMode("edit");
+    setError("");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  async function handlePublish(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
@@ -290,18 +439,7 @@ export default function NewProductPage() {
     setLoading(true);
     setError("");
 
-    if (!form.category_id) {
-      setError(
-        "Please select a category."
-      );
-      setLoading(false);
-      return;
-    }
-
-    if (!variants.length) {
-      setError(
-        "Add at least one variant."
-      );
+    if (!validateBeforePreview()) {
       setLoading(false);
       return;
     }
@@ -347,33 +485,25 @@ export default function NewProductPage() {
 
       formData.append(
         "is_featured",
-        String(
-          form.is_featured
-        )
+        String(form.is_featured)
       );
 
       formData.append(
         "is_active",
-        String(
-          form.is_active
-        )
+        String(form.is_active)
       );
 
       formData.append(
         "variants",
-        JSON.stringify(
-          variants
-        )
+        JSON.stringify(variants)
       );
 
       if (images.length > 0) {
-        // Keep the first image as the main image for the existing API.
         formData.append(
           "image",
           images[0]
         );
 
-        // Send every selected image for the gallery API.
         images.forEach((file) => {
           formData.append(
             "images",
@@ -418,21 +548,542 @@ export default function NewProductPage() {
     }
   }
 
+  const selectedPreviewVariant =
+    variants[
+      previewVariantIndex
+    ] ?? variants[0] ?? null;
+
+  const selectedCategory =
+    categories.find(
+      (category) =>
+        category.id ===
+        form.category_id
+    );
+
+  const previewImage =
+    previewUrls[
+      previewImageIndex
+    ] ?? previewUrls[0] ?? null;
+
+  const basePriceNumber =
+    Number(form.base_price || 0);
+
+  const salePriceNumber =
+    Number(form.sale_price || 0);
+
+  const hasSale =
+    salePriceNumber > 0 &&
+    basePriceNumber > 0 &&
+    salePriceNumber <
+      basePriceNumber;
+
+  const discountPercent =
+    hasSale
+      ? Math.round(
+          ((basePriceNumber -
+            salePriceNumber) /
+            basePriceNumber) *
+            100
+        )
+      : 0;
+
+  if (mode === "preview") {
+    return (
+      <main className="min-h-screen bg-[#f7f2ed] p-4 text-[#4a2925] sm:p-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#dccfc4] bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a6f45]">
+                Product Review
+              </p>
+
+              <h1 className="mt-1 text-2xl font-semibold">
+                Preview before publishing
+              </h1>
+
+              <p className="mt-1 text-sm text-[#76645b]">
+                This product is not live yet.
+                Review everything before publishing.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleBackToEdit}
+                className="rounded-lg border border-[#d6c8bc] bg-white px-5 py-3 font-semibold text-[#4a2925] transition hover:bg-[#faf6f1]"
+              >
+                ← Back to Edit
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const formElement =
+                    document.getElementById(
+                      "publish-product-form"
+                    ) as HTMLFormElement | null;
+
+                  formElement?.requestSubmit();
+                }}
+                disabled={loading}
+                className="rounded-lg bg-[#701c30] px-5 py-3 font-semibold text-white transition hover:bg-[#5d1728] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading
+                  ? "Publishing..."
+                  : "Publish Product"}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="mb-5 rounded-lg border border-[#d8c6b3] bg-[#fbf1e7] px-4 py-3 text-sm font-medium text-[#6e4c3f]">
+            PREVIEW ONLY — customers cannot see
+            this product until you publish it.
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-[#e1d6cd] bg-[#fffaf5] shadow-sm">
+            <div className="grid gap-0 lg:grid-cols-2">
+              {/* GALLERY */}
+              <div className="bg-[#fffaf5] p-4 sm:p-7">
+                <div className="relative overflow-hidden rounded-2xl border border-[#e4d9d0] bg-[#f7f0e9]">
+                  {previewImage ? (
+                    <img
+                      src={previewImage}
+                      alt={
+                        form.name ||
+                        "Product preview"
+                      }
+                      className="aspect-square w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex aspect-square items-center justify-center text-[#8d7a70]">
+                      No product image
+                    </div>
+                  )}
+
+                  {previewUrls.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Previous preview image"
+                        onClick={() =>
+                          setPreviewImageIndex(
+                            (current) =>
+                              current <= 0
+                                ? previewUrls.length - 1
+                                : current - 1
+                          )
+                        }
+                        className="absolute left-3 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-lg text-white backdrop-blur-sm transition hover:bg-black/65 md:block"
+                      >
+                        ‹
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label="Next preview image"
+                        onClick={() =>
+                          setPreviewImageIndex(
+                            (current) =>
+                              current >=
+                              previewUrls.length - 1
+                                ? 0
+                                : current + 1
+                          )
+                        }
+                        className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-lg text-white backdrop-blur-sm transition hover:bg-black/65 md:block"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {previewUrls.length > 1 && (
+                  <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
+                    {previewUrls.map(
+                      (url, index) => (
+                        <button
+                          key={url}
+                          type="button"
+                          onClick={() =>
+                            setPreviewImageIndex(
+                              index
+                            )
+                          }
+                          className={`w-20 min-w-20 overflow-hidden rounded-lg border-2 bg-white transition ${
+                            previewImageIndex ===
+                            index
+                              ? "border-[#701c30]"
+                              : "border-[#e1d6cd] hover:border-[#b59670]"
+                          }`}
+                          aria-label={`Preview image ${
+                            index + 1
+                          }`}
+                        >
+                          <img
+                            src={url}
+                            alt={`${form.name} ${
+                              index + 1
+                            }`}
+                            className="aspect-square w-full object-cover"
+                          />
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+
+                {previewUrls.length > 1 && (
+                  <p className="mt-2 text-center text-xs text-[#8b776a]">
+                    Image{" "}
+                    {previewImageIndex + 1}{" "}
+                    of{" "}
+                    {previewUrls.length}
+                  </p>
+                )}
+              </div>
+
+              {/* DETAILS */}
+              <div className="p-5 sm:p-8 lg:p-10">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#a17b4f]">
+                  Setetha Vastram
+                </p>
+
+                <h2 className="text-3xl font-semibold tracking-tight text-[#4a2925] sm:text-4xl">
+                  {form.name ||
+                    "Product name"}
+                </h2>
+
+                {form.brand && (
+                  <p className="mt-2 text-sm font-medium text-[#7b665c]">
+                    {form.brand}
+                  </p>
+                )}
+
+                {selectedCategory && (
+                  <p className="mt-2 text-sm text-[#7b665c]">
+                    Category:{" "}
+                    {selectedCategory.name}
+                  </p>
+                )}
+
+                <div className="mt-5">
+                  {hasSale ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-base text-[#9a8b82] line-through">
+                        ₹
+                        {basePriceNumber.toFixed(
+                          2
+                        )}
+                      </span>
+
+                      <span className="text-2xl font-bold text-[#701c30]">
+                        ₹
+                        {salePriceNumber.toFixed(
+                          2
+                        )}
+                      </span>
+
+                      <span className="rounded-md bg-[#eadfcf] px-2 py-1 text-sm font-bold text-[#9b7548]">
+                        {discountPercent}% OFF
+                      </span>
+                    </div>
+                  ) : selectedPreviewVariant ? (
+                    <p className="text-2xl font-bold text-[#701c30]">
+                      ₹
+                      {Number(
+                        selectedPreviewVariant.price ||
+                          0
+                      ).toFixed(2)}
+                    </p>
+                  ) : (
+                    <p className="text-2xl font-bold text-[#701c30]">
+                      Select an option
+                    </p>
+                  )}
+                </div>
+
+                {form.description && (
+                  <p className="mt-6 leading-7 text-[#6d574e]">
+                    {form.description}
+                  </p>
+                )}
+
+                {/* OPTIONS */}
+                {variants.length > 0 && (
+                  <section className="mt-8">
+                    <h3 className="mb-4 text-lg font-semibold text-[#4a2925]">
+                      Choose your option
+                    </h3>
+
+                    <div className="flex flex-wrap gap-3">
+                      {variants.map(
+                        (
+                          variant,
+                          index
+                        ) => {
+                          const stock =
+                            Number(
+                              variant.stock || 0
+                            );
+
+                          const outOfStock =
+                            stock <= 0;
+
+                          const isSelected =
+                            previewVariantIndex ===
+                            index;
+
+                          const label = [
+                            variant.size,
+                            variant.color,
+                          ]
+                            .filter(Boolean)
+                            .join(
+                              " / "
+                            );
+
+                          return (
+                            <button
+                              key={`${variant.sku}-${index}`}
+                              type="button"
+                              disabled={
+                                outOfStock
+                              }
+                              onClick={() =>
+                                setPreviewVariantIndex(
+                                  index
+                                )
+                              }
+                              className={`min-w-[120px] rounded-lg border-2 px-4 py-3 text-left transition ${
+                                isSelected
+                                  ? "border-[#701c30] bg-[#701c30] text-white"
+                                  : outOfStock
+                                  ? "border-[#e4ddd5] bg-[#f2ece5] text-[#aaa099]"
+                                  : "border-[#d8cabb] bg-[#fffaf2] text-[#4a2925] hover:border-[#701c30]"
+                              }`}
+                            >
+                              <div className="font-semibold">
+                                {label ||
+                                  variant.sku}
+                              </div>
+
+                              <div
+                                className={`mt-1 text-sm ${
+                                  isSelected
+                                    ? "text-white"
+                                    : outOfStock
+                                    ? "text-[#aaa099]"
+                                    : "text-[#6d574e]"
+                                }`}
+                              >
+                                ₹
+                                {Number(
+                                  variant.price ||
+                                    0
+                                ).toFixed(2)}
+                              </div>
+
+                              <div
+                                className={`mt-1 text-xs font-medium ${
+                                  isSelected
+                                    ? "text-white"
+                                    : outOfStock
+                                    ? "text-[#aaa099]"
+                                    : stock <= 5
+                                    ? "text-[#8a6c4c]"
+                                    : "text-[#8b776a]"
+                                }`}
+                              >
+                                {outOfStock
+                                  ? "Out of Stock"
+                                  : stock <= 5
+                                  ? "Only a few left"
+                                  : "In Stock"}
+                              </div>
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {/* SELECTION */}
+                <div className="mt-8 rounded-xl border border-[#e2d4c5] bg-[#fffaf2] p-5">
+                  <h3 className="text-base font-semibold text-[#4a2925]">
+                    Your selection
+                  </h3>
+
+                  {selectedPreviewVariant ? (
+                    <div className="mt-4 space-y-3 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[#7b665c]">
+                          Product
+                        </span>
+
+                        <span className="font-medium text-[#4a2925]">
+                          {form.name ||
+                            "Product"}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[#7b665c]">
+                          Option
+                        </span>
+
+                        <span className="font-medium text-[#4a2925]">
+                          {[
+                            selectedPreviewVariant.size,
+                            selectedPreviewVariant.color,
+                          ]
+                            .filter(Boolean)
+                            .join(
+                              " / "
+                            ) ||
+                            selectedPreviewVariant.sku}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[#7b665c]">
+                          Code
+                        </span>
+
+                        <span className="font-medium text-[#4a2925]">
+                          {
+                            selectedPreviewVariant.sku
+                          }
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[#7b665c]">
+                          Availability
+                        </span>
+
+                        <span className="font-semibold text-[#701c30]">
+                          {Number(
+                            selectedPreviewVariant.stock ||
+                              0
+                          ) <= 0
+                            ? "Out of Stock"
+                            : Number(
+                                selectedPreviewVariant.stock ||
+                                  0
+                              ) <= 5
+                            ? "Only a few left"
+                            : "In Stock"}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between border-t border-[#e5d9cc] pt-3">
+                        <span className="font-semibold text-[#4a2925]">
+                          Price
+                        </span>
+
+                        <span className="font-bold text-[#701c30]">
+                          {hasSale
+                            ? `₹${salePriceNumber.toFixed(
+                                2
+                              )}`
+                            : `₹${Number(
+                                selectedPreviewVariant.price ||
+                                  0
+                              ).toFixed(2)}`}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-[#7b665c]">
+                      Select an option before
+                      buying.
+                    </p>
+                  )}
+                </div>
+
+                {/* DISABLED BUY BUTTON */}
+                <button
+                  type="button"
+                  disabled
+                  className="mt-6 w-full cursor-not-allowed rounded-xl bg-[#701c30]/70 px-6 py-4 text-base font-semibold text-white"
+                >
+                  Preview Only — Buy Now
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={handleBackToEdit}
+              className="rounded-lg border border-[#d6c8bc] bg-white px-5 py-3 font-semibold text-[#4a2925] transition hover:bg-[#faf6f1]"
+            >
+              ← Edit Product
+            </button>
+          </div>
+
+          <form
+            id="publish-product-form"
+            className="hidden"
+            onSubmit={handlePublish}
+          />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Add Product
-          </h1>
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9a6f45]">
+              Product Management
+            </p>
 
-          <p className="mt-2 text-gray-600">
-            Create a product with category, variants and stock.
-          </p>
+            <h1 className="mt-1 text-3xl font-bold text-gray-900">
+              Add Product
+            </h1>
+
+            <p className="mt-2 text-gray-600">
+              Create the product, review the
+              storefront preview, then publish it.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-[#dccfc4] bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
+            Step 1 of 2 · Product details
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="mb-6 rounded-lg border border-[#d8c6b3] bg-[#fbf1e7] p-4 text-sm text-[#6e4c3f]">
+          Nothing will be published while you are
+          filling this form. Click{" "}
+          <strong>Preview Product</strong> when
+          you are ready to review it.
         </div>
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(event) => {
+            event.preventDefault();
+            handlePreview();
+          }}
           className="space-y-8"
         >
           {/* Product details */}
@@ -616,12 +1267,14 @@ export default function NewProductPage() {
                   categories.length ===
                     0 && (
                     <p className="mt-2 text-sm text-red-600">
-                      No categories found. Create one in Admin → Categories first.
+                      No categories found.
+                      Create one in Admin →
+                      Categories first.
                     </p>
                   )}
               </div>
 
-              {/* Image upload */}
+              {/* Images */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-900">
                   Product images
@@ -638,14 +1291,19 @@ export default function NewProductPage() {
                     <div>
                       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
                         {previewUrls.map(
-                          (preview, index) => (
+                          (
+                            preview,
+                            index
+                          ) => (
                             <div
                               key={preview}
                               className="relative overflow-hidden rounded-lg border border-gray-200 bg-white"
                             >
                               <img
                                 src={preview}
-                                alt={`Product image ${index + 1}`}
+                                alt={`Product image ${
+                                  index + 1
+                                }`}
                                 className="aspect-square w-full object-cover"
                               />
 
@@ -658,7 +1316,9 @@ export default function NewProductPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  removeImage(index)
+                                  removeImage(
+                                    index
+                                  )
                                 }
                                 className="absolute right-2 top-2 rounded-md bg-black/70 px-2 py-1 text-xs font-semibold text-white hover:bg-black"
                               >
@@ -670,7 +1330,8 @@ export default function NewProductPage() {
                       </div>
 
                       <div className="mt-5 flex flex-wrap justify-center gap-3">
-                        {images.length < 5 && (
+                        {images.length <
+                          5 && (
                           <label className="cursor-pointer rounded-lg bg-black px-4 py-2 font-semibold text-white hover:bg-gray-800">
                             Add more images
 
@@ -682,11 +1343,14 @@ export default function NewProductPage() {
                               onChange={(e) => {
                                 setSelectedImages(
                                   Array.from(
-                                    e.target.files ?? []
+                                    e.target
+                                      .files ??
+                                      []
                                   )
                                 );
 
-                                e.currentTarget.value = "";
+                                e.currentTarget.value =
+                                  "";
                               }}
                             />
                           </label>
@@ -695,12 +1359,16 @@ export default function NewProductPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            previewUrls.forEach((url) =>
-                              URL.revokeObjectURL(url)
+                            previewUrls.forEach(
+                              (url) =>
+                                URL.revokeObjectURL(
+                                  url
+                                )
                             );
 
                             setImages([]);
                             setPreviewUrls([]);
+                            setPreviewImageIndex(0);
                             setError("");
                           }}
                           className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-900"
@@ -710,17 +1378,23 @@ export default function NewProductPage() {
                       </div>
 
                       <p className="mt-3 text-sm text-gray-500">
-                        {images.length}/5 images selected. The first image is the main product image.
+                        {images.length}/5
+                        images selected.
+                        The first image is
+                        the main product image.
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p className="font-medium text-gray-900">
-                        Drag and drop product images here
+                        Drag and drop product
+                        images here
                       </p>
 
                       <p className="mt-1 text-sm text-gray-500">
-                        JPG, PNG or WebP · Maximum 5 MB each · Up to 5 images
+                        JPG, PNG or WebP ·
+                        Maximum 5 MB each ·
+                        Up to 5 images
                       </p>
 
                       <label className="mt-4 inline-block cursor-pointer rounded-lg bg-black px-5 py-3 font-semibold text-white hover:bg-gray-800">
@@ -734,11 +1408,13 @@ export default function NewProductPage() {
                           onChange={(e) => {
                             setSelectedImages(
                               Array.from(
-                                e.target.files ?? []
+                                e.target.files ??
+                                  []
                               )
                             );
 
-                            e.currentTarget.value = "";
+                            e.currentTarget.value =
+                              "";
                           }}
                         />
                       </label>
@@ -794,7 +1470,8 @@ export default function NewProductPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Add size, color, code, price and stock.
+                  Add size, color, code, price
+                  and stock.
                 </p>
               </div>
 
@@ -809,7 +1486,10 @@ export default function NewProductPage() {
 
             <div className="mt-6 space-y-5">
               {variants.map(
-                (variant, index) => (
+                (
+                  variant,
+                  index
+                ) => (
                   <div
                     key={index}
                     className="rounded-xl border border-gray-200 bg-gray-50 p-5"
@@ -851,8 +1531,7 @@ export default function NewProductPage() {
                             updateVariant(
                               index,
                               "color",
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
                           placeholder="Black"
@@ -875,8 +1554,7 @@ export default function NewProductPage() {
                             updateVariant(
                               index,
                               "size",
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
                           placeholder="M"
@@ -899,8 +1577,7 @@ export default function NewProductPage() {
                             updateVariant(
                               index,
                               "sku",
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
                           placeholder="BLK-M"
@@ -925,8 +1602,7 @@ export default function NewProductPage() {
                             updateVariant(
                               index,
                               "price",
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
                           placeholder="799"
@@ -951,8 +1627,7 @@ export default function NewProductPage() {
                             updateVariant(
                               index,
                               "stock",
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
                           placeholder="10"
@@ -967,24 +1642,16 @@ export default function NewProductPage() {
             </div>
           </section>
 
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-3">
+          {/* Actions */}
+          <div className="sticky bottom-4 z-20 flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white/95 p-4 shadow-lg backdrop-blur">
             <button
               type="submit"
               disabled={
-                loading ||
                 categoriesLoading
               }
-              className="rounded-lg border-2 border-green-600 bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-700 disabled:border-gray-400 disabled:bg-gray-400"
+              className="rounded-lg bg-[#701c30] px-6 py-3 font-semibold text-white transition hover:bg-[#5d1728] disabled:cursor-not-allowed disabled:bg-gray-400"
             >
-              {loading
-                ? "Creating..."
-                : "Create Product"}
+              Preview Product
             </button>
 
             <button
@@ -1000,7 +1667,10 @@ export default function NewProductPage() {
             </button>
           </div>
         </form>
+
+        {/* Hidden publish form data is managed by React state.
+            Actual publishing happens only from preview. */}
       </div>
     </main>
   );
-} 
+}

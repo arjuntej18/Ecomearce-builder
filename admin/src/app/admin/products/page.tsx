@@ -466,6 +466,7 @@ export default function ProductsPage() {
           result.error ||
             "Unable to update price."
         );
+
         return;
       }
 
@@ -497,7 +498,52 @@ export default function ProductsPage() {
       );
     }
   }
+    async function deleteProduct(product: Product) {
+    const confirmed = window.confirm(
+      `Delete "${product.name}"?\n\nThis cannot be undone.`
+    );
 
+    if (!confirmed) return;
+
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/products/${product.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(
+          result.error ||
+            "Unable to delete product."
+        );
+        return;
+      }
+
+      setProducts((current) =>
+        current.filter(
+          (item) => item.id !== product.id
+        )
+      );
+
+      setVariants((current) =>
+        current.filter(
+          (item) => item.product_id !== product.id
+        )
+      );
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        "Unable to delete product."
+      );
+    }
+  }
   return (
     <main className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-7xl">
@@ -859,18 +905,30 @@ export default function ProductsPage() {
                           </td>
 
                           <td className="px-6 py-5">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                router.push(
-                                  `/admin/products/${product.id}`
-                                )
-                              }
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:border-black"
-                            >
-                              Edit
-                            </button>
-                          </td>
+  <div className="flex gap-2">
+    <button
+      type="button"
+      onClick={() =>
+        router.push(
+          `/admin/products/${product.id}`
+        )
+      }
+      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:border-black"
+    >
+      Edit
+    </button>
+
+    <button
+      type="button"
+      onClick={() =>
+        deleteProduct(product)
+      }
+      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-100"
+    >
+      Delete
+    </button>
+  </div>
+</td>
                         </tr>
                       );
                     }

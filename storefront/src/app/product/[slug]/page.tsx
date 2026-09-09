@@ -412,12 +412,11 @@ const [touchMoved, setTouchMoved] =
   }
 
   return (
-    <main className="min-h-screen bg-[#faeadf] text-[#4a2925]">
-      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
+    <main className="product-page-reveal min-h-screen bg-white pb-24 pt-20 text-[#4a2925] sm:pt-8">      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
         <div className="grid gap-10 lg:grid-cols-2">
 
           {/* IMAGE GALLERY */}
-          <div>
+          <div className="product-image-reveal">
             <div
               className={`relative overflow-hidden rounded-2xl border border-[#e2d4c5] bg-[#fffaf2] touch-pan-y ${
                 touchMoved ? "select-none" : ""
@@ -432,6 +431,7 @@ const [touchMoved, setTouchMoved] =
                   alt={product.name}
                   draggable={false}
                   className="aspect-square w-full object-cover select-none transition-opacity duration-150"
+                
                 />
               ) : (
                 <div className="flex aspect-square items-center justify-center text-[#8b776a]">

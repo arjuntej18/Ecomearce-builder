@@ -43,6 +43,7 @@ type ProductCardProps = {
 function ProductCard({
   product,
 }: ProductCardProps) {
+
   const [imageIndex, setImageIndex] =
     useState(0);
 
@@ -57,8 +58,7 @@ function ProductCard({
   const imageUrls =
     galleryImages.length > 0
       ? galleryImages.map(
-          (image) =>
-            image.image_url
+          (image) => image.image_url
         )
       : product.main_image_url
         ? [product.main_image_url]
@@ -66,8 +66,7 @@ function ProductCard({
 
   const activeVariants =
     product.product_variants?.filter(
-      (variant) =>
-        variant.is_active
+      (variant) => variant.is_active
     ) ?? [];
 
   const validVariants =
@@ -76,24 +75,15 @@ function ProductCard({
         Number.isFinite(
           Number(variant.price)
         ) &&
-        Number(
-          variant.price
-        ) > 0
+        Number(variant.price) > 0
     );
 
   const lowestVariant =
     validVariants.length > 0
       ? validVariants.reduce(
-          (
-            lowest,
-            current
-          ) =>
-            Number(
-              current.price
-            ) <
-            Number(
-              lowest.price
-            )
+          (lowest, current) =>
+            Number(current.price) <
+            Number(lowest.price)
               ? current
               : lowest
         )
@@ -101,22 +91,18 @@ function ProductCard({
 
   const currentPrice =
     lowestVariant
-      ? Number(
-          lowestVariant.price
-        )
+      ? Number(lowestVariant.price)
       : null;
 
   const originalPrice =
-    lowestVariant?.original_price !=
-    null
+    lowestVariant?.original_price != null
       ? Number(
           lowestVariant.original_price
         )
       : null;
 
   const discountPercent =
-    lowestVariant?.discount_percent !=
-    null
+    lowestVariant?.discount_percent != null
       ? Number(
           lowestVariant.discount_percent
         )
@@ -125,16 +111,13 @@ function ProductCard({
   const hasDiscount =
     originalPrice !== null &&
     currentPrice !== null &&
-    originalPrice >
-      currentPrice &&
+    originalPrice > currentPrice &&
     discountPercent > 0;
 
   function handleMouseMove(
     event: React.MouseEvent<HTMLDivElement>
   ) {
-    if (
-      imageUrls.length <= 1
-    ) {
+    if (imageUrls.length <= 1) {
       return;
     }
 
@@ -142,67 +125,54 @@ function ProductCard({
       event.currentTarget.getBoundingClientRect();
 
     const x =
-      event.clientX -
-      rect.left;
+      event.clientX - rect.left;
 
     const zoneWidth =
-      rect.width /
-      imageUrls.length;
+      rect.width / imageUrls.length;
 
-    const nextIndex =
-      Math.min(
-        imageUrls.length - 1,
-        Math.floor(
-          x / zoneWidth
-        )
-      );
-
-    setImageIndex(
-      nextIndex
+    const nextIndex = Math.min(
+      imageUrls.length - 1,
+      Math.floor(x / zoneWidth)
     );
+
+    setImageIndex(nextIndex);
   }
 
   function handleTouchEnd() {
-    if (
-      imageUrls.length <= 1
-    ) {
+    if (imageUrls.length <= 1) {
       return;
     }
 
     setImageIndex(
       (current) =>
-        current >=
-          imageUrls.length - 1
+        current >= imageUrls.length - 1
           ? 0
           : current + 1
     );
   }
 
+  
+
   return (
     <Link
-      href={`/product/${product.slug}`}
-      className="group block w-[220px] min-w-[220px] overflow-hidden rounded-xl border border-[#e4d8ca] bg-[#fffaf2] transition duration-200 hover:-translate-y-0.5 hover:border-[#b59670] hover:shadow-lg sm:w-[240px] sm:min-w-[240px]"
+  href={`/product/${product.slug}`}
+      className="group block w-[220px] min-w-[220px] overflow-hidden rounded-xl border border-[#e4d8ca] bg-[#fffaf2] transition duration-300 hover:-translate-y-0.5 hover:border-[#b59670] hover:shadow-lg sm:w-[240px] sm:min-w-[240px]"
     >
       <div
         className="relative overflow-hidden bg-[#eee3d4] touch-pan-y"
-        onMouseMove={
-          handleMouseMove
-        }
-        onTouchEnd={
-          handleTouchEnd
-        }
+        onMouseMove={handleMouseMove}
+        onTouchEnd={handleTouchEnd}
       >
-        {imageUrls.length >
-        0 ? (
+        {imageUrls.length > 0 ? (
           <img
-            src={
-              imageUrls[
-                imageIndex
-              ]
-            }
+            src={imageUrls[imageIndex]}
             alt={product.name}
             draggable={false}
-            className="aspect-square w-full select-none object-cover transition-opacity duration-200"
+            className="aspect-square w-full select-none object-cover transition-all duration-500 ease-out group-hover:scale-[1.015]"
+            style={{
+              viewTransitionName:
+                `product-image-${product.id}`,
+            }}
           />
         ) : (
           <div className="flex aspect-square items-center justify-center text-sm text-[#8b776a]">
@@ -210,16 +180,14 @@ function ProductCard({
           </div>
         )}
 
-        {imageUrls.length >
-          1 && (
+        {imageUrls.length > 1 && (
           <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-full bg-black/35 px-2.5 py-1.5 backdrop-blur-sm">
             {imageUrls.map(
               (_, index) => (
                 <span
                   key={index}
                   className={`h-1.5 w-1.5 rounded-full ${
-                    index ===
-                    imageIndex
+                    index === imageIndex
                       ? "bg-white"
                       : "bg-white/45"
                   }`}
@@ -239,32 +207,22 @@ function ProductCard({
           <div className="mt-2 flex items-center gap-2 whitespace-nowrap">
             <span className="text-sm text-[#9a8b82] line-through">
               ₹
-              {originalPrice!.toFixed(
-                2
-              )}
+              {originalPrice!.toFixed(2)}
             </span>
 
             <span className="text-sm font-semibold text-[#9b7548]">
-              {
-                discountPercent
-              }
-              % OFF
+              {discountPercent}% OFF
             </span>
 
             <span className="text-lg font-bold text-[#72263a]">
               ₹
-              {currentPrice!.toFixed(
-                2
-              )}
+              {currentPrice!.toFixed(2)}
             </span>
           </div>
         ) : (
           <p className="mt-2 text-lg font-bold text-[#72263a]">
-            {currentPrice !==
-            null
-              ? `₹${currentPrice.toFixed(
-                  2
-                )}`
+            {currentPrice !== null
+              ? `₹${currentPrice.toFixed(2)}`
               : "Price unavailable"}
           </p>
         )}
@@ -279,34 +237,33 @@ function CategoryStrip({
   categories: Category[];
 }) {
   return (
-    <section className="border-y border-[#e1cfbb] bg-[#faeadf]">
-      <div className="mx-auto max-w-7xl px-5 py-4 sm:px-8">
-        <div className="flex gap-3 overflow-x-auto pb-1">
+    <>
+      <div className="mx-auto max-w-7xl px-5 sm:px-8">
+        <div className="flex items-center gap-7 overflow-x-auto py-2.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:gap-9">
           <Link
             href="/shop"
-            className="shrink-0 rounded-full bg-[#72263a] px-5 py-2.5 text-sm font-semibold text-[#fffaf5]"   
+            className="group relative shrink-0 py-1 text-sm font-semibold text-[#701c30] transition-colors duration-300"
           >
             All
+            <span className="absolute bottom-0 left-1/2 h-px w-full -translate-x-1/2 bg-[#701c30]" />
           </Link>
 
-          {categories.map(
-            (category) => (
-              <Link
-                key={category.id}
-                href={`/shop?category=${encodeURIComponent(
-                  category.slug
-                )}`}
-                className="shrink-0 rounded-full border border-[#d8c8b7] bg-[#fffaf2] px-5 py-2.5 text-sm font-medium text-[#4a2925] transition hover:border-[#72263a] hover:text-[#72263a]"
-              >
-                {
-                  category.name
-                }
-              </Link>
-            )
-          )}
+          {categories.map((category) => (
+            <Link
+              key={category.id}
+              href={`/shop?category=${encodeURIComponent(
+                category.slug
+              )}`}
+              className="group relative shrink-0 py-1 text-sm font-medium text-[#4a2925]/80 transition-colors duration-300 hover:text-[#701c30]"
+            >
+              {category.name}
+
+              <span className="absolute bottom-0 left-1/2 h-px w-0 -translate-x-1/2 bg-[#701c30] transition-all duration-300 group-hover:w-full" />
+            </Link>
+          ))}
         </div>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -465,6 +422,39 @@ export default function HomePage() {
     loadHomepage();
   }, []);
 
+  useEffect(() => {
+  const items = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-hero-item]")
+  );
+  console.log("Hero items found:", items.length);
+  if (items.length === 0) return;
+
+  const handleScroll = () => {
+    const scrollY = window.scrollY;
+
+    items.forEach((item, index) => {
+      const start = index * 45;
+      const progress = Math.min(
+        Math.max((scrollY - start) / 140, 0),
+        1
+      );
+
+      item.style.opacity = `${1 - progress}`;
+      item.style.transform = `translateY(${-25 * progress}px)`;
+      item.style.filter = `blur(${7 * progress}px)`;
+    });
+  };
+
+  window.addEventListener("scroll", handleScroll, {
+    passive: true,
+  });
+
+  handleScroll();
+
+  return () => {
+    window.removeEventListener("scroll", handleScroll);
+  };
+}, []);
   /*
     Each shelf has independent logic.
 
@@ -545,32 +535,27 @@ export default function HomePage() {
       {/* First category strip */}
       <CategoryStrip
         categories={categories}
+      
       />
 
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
 
-        {/* Hero */}
-        <section className="hero-rise mb-16">
-              <div className="hero-rise mx-auto max-w-3xl px-6 py-20 text-center sm:py-28">            <div className="max-w-3xl">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-[#a17b4f]">
-                Setetha Vastram
-              </p>
+       {/* Hero */}
+<section className="hero-scroll mb-16">
+  <div className="mx-auto max-w-3xl px-6 py-20 text-center sm:py-28">
+    <div className="max-w-3xl">
+<p data-hero-item className="mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-[#a17b4f]">        Setetha Vastram
+      </p>
 
-              <h1 className="font-serif text-4xl font-medium leading-tight tracking-tight text-[#4a2925] sm:text-6xl">
-                Timeless style,
-                <br />
-                thoughtfully chosen.
-              </h1>
+<h1 data-hero-item className="font-serif text-4xl font-medium leading-tight tracking-tight text-[#4a2925] sm:text-6xl">        <br />
+        thoughtfully chosen.
+      </h1>
 
-              <p className="mt-5 max-w-xl text-base leading-7 text-[#6d574e] sm:text-lg">
-                Discover our latest
-                collections, selected
-                pieces and special
-                offers.
-              </p>
-            </div>
-          </div>
-        </section>
+<p data-hero-item className="mx-auto mt-5 max-w-xl text-base leading-7 text-[#6d574e] sm:text-lg">        Discover our latest collections, selected pieces and special offers.
+      </p>
+    </div>
+  </div>
+</section>
 
         {loading ? (
           <div className="py-20 text-center text-[#765f52]">
@@ -593,14 +578,8 @@ export default function HomePage() {
               }
             />
 
-            {/* Category strip again */}
-            <div className="mb-14">
-              <CategoryStrip
-                categories={
-                  categories
-                }
-              />
-            </div>
+            
+            
 
             {/* Special offers */}
             <ProductShelf
@@ -620,13 +599,18 @@ export default function HomePage() {
               }
             />
 
-            {/* More to explore */}
-            <ProductShelf
-              id="more-to-explore"
-              title="More to Explore"
-              products={
-                moreToExplore
-              }
+{/* More to explore */}
+<ProductShelf
+  id="more-to-explore"
+  title="More to Explore"
+  products={moreToExplore}
+/>
+
+{/* All products */}
+<ProductShelf
+  id="all-products"
+  title="All Products"
+  products={products}
             />
           </>
         )}
