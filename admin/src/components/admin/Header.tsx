@@ -1,6 +1,10 @@
 "use client";
 
-export default function Header() {
+export default function Header({
+  onMenuClick,
+}: {
+  onMenuClick: () => void;
+}) {
   return (
     <header className="sticky top-0 z-20 border-b bg-white">
       <div className="flex h-16 items-center justify-between px-6">
@@ -9,7 +13,13 @@ export default function Header() {
             Admin Dashboard
           </h2>
         </div>
-
+        <button
+  type="button"
+  onClick={onMenuClick}
+  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 md:hidden"
+>
+  Menu
+</button>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-sm font-semibold text-white">
             A

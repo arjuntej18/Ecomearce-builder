@@ -5,6 +5,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 type Category = {
@@ -110,7 +111,23 @@ function CloseIcon() {
     </svg>
   );
 }
-
+function BackIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      className="h-5 w-5"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15 5 8 12l7 7"
+      />
+    </svg>
+  );
+}
 export default function StorefrontHeader() {
   const supabase =
     createSupabaseBrowserClient();
@@ -140,6 +157,8 @@ export default function StorefrontHeader() {
     useState(true);
 
   const lastScrollY = useRef(0);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     async function loadCategories() {
@@ -535,6 +554,16 @@ export default function StorefrontHeader() {
             </div>
           </div>
         )}
+        {pathname !== "/" && (
+  <button
+    type="button"
+    onClick={() => router.back()}
+    aria-label="Go back"
+    className="fixed left-4 top-20 z-40 flex h-10 w-10 items-center justify-center rounded-full text-[#4a2925] transition hover:bg-black/5"
+  >
+    <BackIcon />
+  </button>
+)}
       </header>
 
       {/* Minimal floating menu icon while header is hidden */}
@@ -593,7 +622,16 @@ export default function StorefrontHeader() {
               >
                 Shop All
               </Link>
-
+              <button
+  type="button"
+  onClick={() => {
+    closeAll();
+    window.location.href = "/shop?filter=open";
+  }}
+  className="border-b border-[#e5d7c6] py-4 text-left text-lg text-[#4a2925]"
+>
+  Filter
+</button>
               <div className="border-b border-[#e5d7c6] py-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#a17b4f]">
                   Categories

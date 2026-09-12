@@ -233,7 +233,33 @@ export default function ShopPage() {
 
   const [loading, setLoading] =
     useState(true);
+  const [filterOpen, setFilterOpen] =
+  useState(false);
+useEffect(() => {
+  const params = new URLSearchParams(
+    window.location.search
+  );
 
+  if (params.get("filter") === "open") {
+    setFilterOpen(true);
+  }
+}, []);
+const [sortOpen, setSortOpen] =
+  useState(false);
+
+const [sortBy, setSortBy] =
+  useState<
+    "newest" |
+    "price-low" |
+    "price-high" |
+    "discount"
+  >("newest");
+
+const [maxPrice, setMaxPrice] =
+  useState<number | null>(null);
+
+const [discountOnly, setDiscountOnly] =
+  useState(false);
   useEffect(() => {
     async function loadShop() {
       setLoading(true);
@@ -242,7 +268,9 @@ export default function ShopPage() {
         new URLSearchParams(
           window.location.search
         );
-
+        setFilterOpen(
+  params.get("filter") === "open"
+);
       const categorySlug =
         params.get("category");
 
@@ -338,26 +366,218 @@ export default function ShopPage() {
     loadShop();
   }, []);
 
+    const filteredAndSortedProducts = [...products]
+    .filter((product) => {
+      const variants =
+        product.product_variants?.filter(
+          (variant) => variant.is_active
+        ) ?? [];
+
+      const prices = variants
+        .map((variant) => Number(variant.price))
+        .filter(
+          (price) =>
+            Number.isFinite(price) && price > 0
+        );
+
+      const lowestPrice =
+        prices.length > 0
+          ? Math.min(...prices)
+          : null;
+
+      if (
+        maxPrice !== null &&
+        (lowestPrice === null ||
+          lowestPrice > maxPrice)
+      ) {
+        return false;
+      }
+
+      if (discountOnly) {
+        const hasDiscount = variants.some(
+          (variant) =>
+            Number(variant.discount_percent ?? 0) > 0
+        );
+
+        if (!hasDiscount) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "price-low") {
+        const aPrice = Math.min(
+          ...(a.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) => Number(v.price))
+            .filter((p) => Number.isFinite(p) && p > 0)
+        );
+
+        const bPrice = Math.min(
+          ...(b.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) => Number(v.price))
+            .filter((p) => Number.isFinite(p) && p > 0)
+        );
+
+        return aPrice - bPrice;
+      }
+
+      if (sortBy === "price-high") {
+        const aPrice = Math.min(
+          ...(a.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) => Number(v.price))
+            .filter((p) => Number.isFinite(p) && p > 0)
+        );
+
+        const bPrice = Math.min(
+          ...(b.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) => Number(v.price))
+            .filter((p) => Number.isFinite(p) && p > 0)
+        );
+
+        return bPrice - aPrice;
+      }
+
+      if (sortBy === "discount") {
+        const aDiscount = Math.max(
+          ...(a.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) =>
+              Number(v.discount_percent ?? 0)
+            )
+        );
+
+        const bDiscount = Math.max(
+          ...(b.product_variants ?? [])
+            .filter((v) => v.is_active)
+            .map((v) =>
+              Number(v.discount_percent ?? 0)
+            )
+        );
+
+        return bDiscount - aDiscount;
+      }
+
+      return 0;
+    });
+
+
   return (
     <main className="min-h-screen bg-[#faeadf]">
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
 
         {/* Page heading */}
-        <div className="mb-9">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#a17b4f]">
-            Setetha Vastram
-          </p>
+<div className="mb-9">
+  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#a17b4f]">
+    Setetha Vastram
+  </p>
 
-          <h1 className="text-3xl font-semibold tracking-tight text-[#4a2925] sm:text-4xl">
-            {activeCategory
-              ? activeCategory.name
-              : "Shop"}
-          </h1>
+  <h1 className="text-3xl font-semibold tracking-tight text-[#4a2925] sm:text-4xl">
+    {activeCategory
+      ? activeCategory.name
+      : "Shop"}
+  </h1>
 
-          <div className="mt-4 h-px w-16 bg-[#a17b4f]" />
-        </div>
+  <div className="mt-4 h-px w-16 bg-[#a17b4f]" />
+</div>
 
-        {loading ? (
+{/* Filter + Sort */}
+<div className="mb-8 flex items-center justify-between border-y border-[#e2d4c5] py-4">
+  <button
+  type="button"
+  onClick={() => setFilterOpen((open) => !open)}
+  className="text-sm font-medium text-[#4a2925] hover:opacity-60"
+>
+  Filter
+</button>
+
+  <button
+  type="button"
+  onClick={() => setSortOpen((open) => !open)}
+  className="text-sm font-medium text-[#4a2925] hover:opacity-60"
+>
+  Sort
+</button>
+</div>
+{filterOpen && (
+  <div className="mb-8 rounded-xl border border-[#e2d4c5] bg-[#fffaf2] p-5">
+    <div className="grid gap-5 sm:grid-cols-2">
+      <div>
+        <label className="text-sm font-semibold text-[#4a2925]">
+          Maximum Price
+        </label>
+
+        <input
+          type="number"
+          min="0"
+          value={maxPrice ?? ""}
+          onChange={(event) =>
+            setMaxPrice(
+              event.target.value
+                ? Number(event.target.value)
+                : null
+            )
+          }
+          placeholder="Any price"
+          className="mt-2 w-full rounded-lg border border-[#d6bda8] bg-white px-4 py-3 text-[#4a2925] outline-none focus:border-[#72263a]"
+        />
+      </div>
+
+      <label className="flex items-center gap-3 text-sm font-medium text-[#4a2925]">
+        <input
+          type="checkbox"
+          checked={discountOnly}
+          onChange={(event) =>
+            setDiscountOnly(event.target.checked)
+          }
+          className="h-4 w-4"
+        />
+        Only show discounted products
+      </label>
+    </div>
+  </div>
+)}
+{sortOpen && (
+  <div className="mb-8 rounded-xl border border-[#e2d4c5] bg-[#fffaf2] p-4">
+    <div className="flex flex-col gap-2">
+      {[
+        ["newest", "Newest"],
+        ["price-low", "Price: Low to High"],
+        ["price-high", "Price: High to Low"],
+        ["discount", "Biggest Discount"],
+      ].map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => {
+            setSortBy(
+              value as
+                | "newest"
+                | "price-low"
+                | "price-high"
+                | "discount"
+            );
+            setSortOpen(false);
+          }}
+          className={`rounded-lg px-4 py-3 text-left text-sm font-medium ${
+            sortBy === value
+              ? "bg-[#72263a] text-white"
+              : "text-[#4a2925] hover:bg-[#f3e7dc]"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
+{loading ? (
+      
           <div className="py-20 text-center text-[#765f52]">
             Loading products...
           </div>
@@ -379,7 +599,7 @@ export default function ShopPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-5 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">
-            {products.map(
+            {filteredAndSortedProducts.map(
               (product) => (
                 <ProductCard
                   key={product.id}

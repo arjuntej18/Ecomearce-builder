@@ -2,9 +2,11 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
 type Product = {
   id: string;
+  category_id: string | null;
   name: string;
   slug: string;
   description: string | null;
@@ -15,7 +17,10 @@ type Product = {
   is_featured: boolean;
   is_active: boolean;
 };
-
+type Category = {
+  id: string;
+  name: string;
+};
 export default function EditProductPage() {
   const params = useParams();
   const router = useRouter();
@@ -25,12 +30,15 @@ export default function EditProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+
 
   const [form, setForm] = useState({
     name: "",
     slug: "",
     description: "",
     brand: "",
+    category_id: "",
     base_price: "",
     sale_price: "",
     main_image_url: "",
@@ -38,27 +46,45 @@ export default function EditProductPage() {
     is_active: true,
   });
 
+  
   useEffect(() => {
     async function loadProduct() {
       try {
+        
         const response = await fetch(
           `/api/admin/products/${productId}`
         );
 
         const data = await response.json();
-
+        
         if (!response.ok) {
           setError(data.error || "Unable to load product.");
           return;
         }
 
         const product: Product = data.product;
+        const { data: categoryData, error: categoryError } =
+  await createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+    .from("categories")
+    .select("id, name")
+    .order("name");
 
+if (categoryError) {
+  console.error(categoryError);
+} else {
+  setCategories(
+    (categoryData ?? []) as Category[]
+  );
+}
         setForm({
           name: product.name || "",
           slug: product.slug || "",
           description: product.description || "",
           brand: product.brand || "",
+          category_id: product.category_id || "",
           base_price: String(product.base_price ?? ""),
           sale_price:
             product.sale_price == null
@@ -100,7 +126,8 @@ export default function EditProductPage() {
             slug: form.slug,
             description: form.description,
             brand: form.brand,
-            base_price: form.base_price,
+category_id: form.category_id || null,
+base_price: form.base_price,
             sale_price: form.sale_price,
             main_image_url: form.main_image_url,
             is_featured: form.is_featured,
@@ -227,7 +254,33 @@ export default function EditProductPage() {
               className="w-full rounded-lg border p-3"
             />
           </div>
+              <div>
+  <label className="mb-2 block text-sm font-medium">
+    Category
+  </label>
 
+  <select
+    value={form.category_id}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        category_id: e.target.value,
+      }))
+    }
+    className="w-full rounded-lg border p-3 text-gray-900"
+  >
+    <option value="">No category</option>
+
+    {categories.map((category) => (
+      <option
+        key={category.id}
+        value={category.id}
+      >
+        {category.name}
+      </option>
+    ))}
+  </select>
+</div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium">

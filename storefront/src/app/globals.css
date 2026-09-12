@@ -21,11 +21,15 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--background);
+  background:
+    linear-gradient(
+      rgba(253, 246, 239, 0.65),
+rgba(253, 246, 239, 0.65)
+    ),
+    url("/images/bg_image.jpg") center / cover fixed;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
-
 /* Hero entrance animation */
 .hero-rise {
   animation: hero-rise 900ms ease-out both;
@@ -130,5 +134,14 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+@keyframes pixel-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }

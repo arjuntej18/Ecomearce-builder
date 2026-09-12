@@ -1,10 +1,15 @@
 "use client";
 
 // Homepage with dynamic category strips and independent horizontal product shelves.
-
-import { useEffect, useState } from "react";
+import {
+  MessageCircle as WhatsAppIcon,
+  Phone as PhoneIcon,
+  Mail as MailIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+
 
 type ProductImage = {
   id: string;
@@ -319,6 +324,72 @@ function ProductShelf({
     </section>
   );
 }
+function PixelHero({
+  images,
+}: {
+  images: string[];
+}) {
+  const [active, setActive] = useState(0);
+  const [previous, setPrevious] = useState<number | null>(null);
+  const [transitioning, setTransitioning] =
+    useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next =
+        (active + 1) % images.length;
+
+      setPrevious(active);
+      setActive(next);
+      setTransitioning(true);
+
+      const finish = setTimeout(() => {
+        setPrevious(null);
+        setTransitioning(false);
+      }, 250);
+
+      return () => clearTimeout(finish);
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [active, images.length]);
+
+  return (
+    <div className="relative h-[520px] overflow-hidden sm:h-[620px]">
+      {/* Previous image */}
+      {previous !== null && (
+        <img
+          src={images[previous]}
+          alt="Setetha Vastram"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+
+      {/* New image */}
+      <img
+        src={images[active]}
+        alt="Setetha Vastram"
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-out ${
+          transitioning
+            ? "opacity-100"
+            : "opacity-100"
+        }`}
+        style={{
+          opacity: transitioning ? 1 : 1,
+        }}
+      />
+
+      {/* Soft micro-level transition layer */}
+      <div
+        className={`absolute inset-0 bg-white/5 backdrop-blur-[0.2px] transition-opacity duration-[250ms] ${
+          transitioning
+            ? "opacity-0"
+            : "opacity-0"
+        }`}
+      />
+    </div>
+  );
+}
 
 export default function HomePage() {
   const supabase =
@@ -530,7 +601,7 @@ export default function HomePage() {
     products.slice(0, 12);
 
   return (
-    <main className="min-h-screen bg-[#f7eee7] text-[#4a2925] pt-20 sm:pt-24">
+    <main className="min-h-screen  text-[#4a2925] pt-20 sm:pt-24">
 
       {/* First category strip */}
       <CategoryStrip
@@ -541,18 +612,36 @@ export default function HomePage() {
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
 
        {/* Hero */}
-<section className="hero-scroll mb-16">
-  <div className="mx-auto max-w-3xl px-6 py-20 text-center sm:py-28">
-    <div className="max-w-3xl">
-<p data-hero-item className="mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-[#a17b4f]">        Setetha Vastram
-      </p>
+{/* Hero */}
+<section className="relative mb-16 overflow-hidden">
+  <div className="relative">
+    <PixelHero
+      images={[
+        "/images/hero-1.jpg",
+        "/images/hero-2.jpg",
+        "/images/hero-3.jpg",
+        "/images/hero-4.jpg",
+      ]}
+    />
 
-<h1 data-hero-item className="font-serif text-4xl font-medium leading-tight tracking-tight text-[#4a2925] sm:text-6xl">        <br />
-        thoughtfully chosen.
-      </h1>
+    <div className="absolute inset-0 bg-black/20" />
 
-<p data-hero-item className="mx-auto mt-5 max-w-xl text-base leading-7 text-[#6d574e] sm:text-lg">        Discover our latest collections, selected pieces and special offers.
-      </p>
+    <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center">
+      <div className="max-w-3xl text-white">
+        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.24em]">
+          Setetha Vastram
+        </p>
+
+        <h1 className="font-serif text-4xl font-medium leading-tight tracking-tight sm:text-6xl">
+          Timeless style,
+          <br />
+          thoughtfully chosen.
+        </h1>
+
+        <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/90 sm:text-lg">
+          Discover our latest collections, selected pieces and special offers.
+        </p>
+      </div>
     </div>
   </div>
 </section>
@@ -606,17 +695,33 @@ export default function HomePage() {
   products={moreToExplore}
 />
 
-{/* All products */}
-<ProductShelf
-  id="all-products"
-  title="All Products"
-  products={products}
-            />
-          </>
-        )}
+{/* Shop */}
+<section
+  id="shop"
+  className="mb-14 border-y border-[#d6bda8] py-10 text-center"
+>
+  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#a17b4f]">
+    The Collection
+  </p>
+
+  <h2 className="mt-2 font-serif text-3xl text-[#4a2925] sm:text-4xl">
+    Shop
+  </h2>
+
+  <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#6d574e]">
+    Explore the complete Setetha Vastram collection.
+  </p>
+
+  <Link
+    href="/shop"
+    className="mt-6 inline-flex rounded-full border border-[#72263a] bg-[#72263a] px-7 py-3 text-sm font-semibold text-white transition hover:bg-[#5d1e2f]"
+  >
+    Go to Shop
+  </Link>
+</section>
 
         {/* Footer */}
-        <footer className="border-t border-[#d8c1a9] pt-10 pb-8">
+        <footer className="-mx-5 border-t border-[#d8c1a9] bg-[#faeadf] px-5 pt-10 pb-8 sm:-mx-8 sm:px-8">
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
 
             <div>
@@ -660,62 +765,76 @@ export default function HomePage() {
             </div>
 
             <div>
-              <h4 className="text-sm font-semibold uppercase tracking-[0.15em] text-[#a17b4f]">
-                Information
-              </h4>
+  <h4 className="text-sm font-semibold uppercase tracking-[0.15em] text-[#a17b4f]">
+    Connect
+  </h4>
 
-              <div className="mt-3 space-y-2 text-sm text-[#765f52]">
-                <a
-                  href="#about"
-                  className="block hover:text-[#72263a]"
-                >
-                  About Us
-                </a>
+  <div className="mt-4 flex items-center gap-4">
+    <a
+      href="https://www.instagram.com/seetha_vastram?stkn=NWpnYXFyMnIyazZx"
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Instagram"
+      className="text-[#4a2925] transition-opacity hover:opacity-60"
+    >
+      <svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  strokeWidth="1.7"
+  className="h-[19px] w-[19px]"
+  aria-hidden="true"
+>
+  <rect
+    x="3"
+    y="3"
+    width="18"
+    height="18"
+    rx="5"
+  />
+  <circle
+    cx="12"
+    cy="12"
+    r="4"
+  />
+  <circle
+    cx="17.5"
+    cy="6.5"
+    r="1"
+    fill="currentColor"
+    stroke="none"
+  />
+</svg>
+    </a>
 
-                <a
-                  href="#contact"
-                  className="block hover:text-[#72263a]"
-                >
-                  Contact
-                </a>
+    <a
+      href="https://wa.me/919527822498"
+      target="_blank"
+      rel="noreferrer"
+      aria-label="WhatsApp"
+      className="text-[#4a2925] transition-opacity hover:opacity-60"
+    >
+      <WhatsAppIcon size={19} strokeWidth={1.7} />
+    </a>
 
-                <a
-                  href="#location"
-                  className="block hover:text-[#72263a]"
-                >
-                  Location
-                </a>
-              </div>
-            </div>
+    <a
+      href="tel:+919527822498"
+      aria-label="Call Setetha Vastram"
+      className="text-[#4a2925] transition-opacity hover:opacity-60"
+    >
+      <PhoneIcon size={19} strokeWidth={1.7} />
+    </a>
 
-            <div>
-              <h4 className="text-sm font-semibold uppercase tracking-[0.15em] text-[#a17b4f]">
-                Connect
-              </h4>
-
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#765f52]">
-                <a
-                  href="#instagram"
-                  className="hover:text-[#72263a]"
-                >
-                  Instagram
-                </a>
-
-                <a
-                  href="#youtube"
-                  className="hover:text-[#72263a]"
-                >
-                  YouTube
-                </a>
-
-                <a
-                  href="#whatsapp"
-                  className="hover:text-[#72263a]"
-                >
-                  WhatsApp
-                </a>
-              </div>
-            </div>
+    <a
+      href="mailto:seethavastram@gmail.com"
+      aria-label="Email Setetha Vastram"
+      className="text-[#4a2925] transition-opacity hover:opacity-60"
+    >
+      <MailIcon size={19} strokeWidth={1.7} />
+    </a>
+  </div>
+</div>
           </div>
 
           <div className="mt-8 border-t border-[#e2d4c5] pt-5 text-xs text-[#8b776a]">
@@ -725,7 +844,9 @@ export default function HomePage() {
             rights reserved.
           </div>
         </footer>
+          </>
+        )}
       </div>
     </main>
   );
-}
+} 
