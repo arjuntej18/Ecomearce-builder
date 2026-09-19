@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDateTime } from "@/lib/formatDateTime";
 import { useState } from "react";
 
 type Order = {
@@ -218,9 +219,7 @@ export default function OrdersTable({
                       </td>
 
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(
-                          order.created_at
-                        ).toLocaleString()}
+                        {formatDateTime(order.created_at)}
                       </td>
                     </tr>
                   );

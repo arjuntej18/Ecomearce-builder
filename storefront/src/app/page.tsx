@@ -360,7 +360,7 @@ function PixelHero({
       {previous !== null && (
         <img
           src={images[previous]}
-          alt="Setetha Vastram"
+          alt="Seetha Vastram"
           className="absolute inset-0 h-full w-full object-cover"
         />
       )}
@@ -368,7 +368,7 @@ function PixelHero({
       {/* New image */}
       <img
         src={images[active]}
-        alt="Setetha Vastram"
+        alt="Seetha Vastram"
         className={`absolute inset-0 h-full w-full object-cover transition-opacity ease-out ${
           transitioning
             ? "opacity-100"
@@ -629,7 +629,7 @@ export default function HomePage() {
     <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center">
       <div className="max-w-3xl text-white">
         <p className="mb-4 text-xs font-semibold uppercase tracking-[0.24em]">
-          Setetha Vastram
+          Seetha Vastram
         </p>
 
         <h1 className="font-serif text-4xl font-medium leading-tight tracking-tight sm:text-6xl">
@@ -709,7 +709,7 @@ export default function HomePage() {
   </h2>
 
   <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#6d574e]">
-    Explore the complete Setetha Vastram collection.
+    Explore the complete Seetha Vastram collection.
   </p>
 
   <Link
@@ -726,7 +726,7 @@ export default function HomePage() {
 
             <div>
               <h3 className="font-serif text-xl text-[#4a2925]">
-                Setetha Vastram
+                Seetha Vastram
               </h3>
 
               <p className="mt-3 max-w-xs text-sm leading-6 text-[#765f52]">
@@ -820,7 +820,7 @@ export default function HomePage() {
 
     <a
       href="tel:+919527822498"
-      aria-label="Call Setetha Vastram"
+      aria-label="Call Seetha Vastram"
       className="text-[#4a2925] transition-opacity hover:opacity-60"
     >
       <PhoneIcon size={19} strokeWidth={1.7} />
@@ -828,7 +828,7 @@ export default function HomePage() {
 
     <a
       href="mailto:seethavastram@gmail.com"
-      aria-label="Email Setetha Vastram"
+      aria-label="Email Seetha Vastram"
       className="text-[#4a2925] transition-opacity hover:opacity-60"
     >
       <MailIcon size={19} strokeWidth={1.7} />
@@ -840,7 +840,7 @@ export default function HomePage() {
           <div className="mt-8 border-t border-[#e2d4c5] pt-5 text-xs text-[#8b776a]">
             ©{" "}
             {new Date().getFullYear()}{" "}
-            Setetha Vastram. All
+            Seetha Vastram. All
             rights reserved.
           </div>
         </footer>
