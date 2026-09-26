@@ -1,10 +1,133 @@
-// Admin dashboard with real Supabase statistics.
+// app/admin/page.tsx
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
+const IST_TIME_ZONE = "Asia/Kolkata";
+const IST_OFFSET_MS =
+  5 * 60 * 60 * 1000 + 30 * 60 * 1000;
+
+type CalendarDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+type CalendarMonth = {
+  year: number;
+  month: number;
+};
+
+type OrderChartRow = {
+  id: string;
+  created_at: string;
+  total_amount: number | null;
+  payment_status: string | null;
+  status: string | null;
+};
+
+function getISTCalendarDate(
+  date: Date
+): CalendarDate {
+  const parts = new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: IST_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).formatToParts(date);
+
+  const values = Object.fromEntries(
+    parts
+      .filter(
+        (part) =>
+          part.type !== "literal"
+      )
+      .map((part) => [
+        part.type,
+        Number(part.value),
+      ])
+  ) as {
+    year: number;
+    month: number;
+    day: number;
+  };
+
+  return values;
+}
+
+function addCalendarDays(
+  date: CalendarDate,
+  days: number
+): CalendarDate {
+  const value = new Date(
+    Date.UTC(
+      date.year,
+      date.month - 1,
+      date.day
+    )
+  );
+
+  value.setUTCDate(
+    value.getUTCDate() + days
+  );
+
+  return {
+    year: value.getUTCFullYear(),
+    month: value.getUTCMonth() + 1,
+    day: value.getUTCDate(),
+  };
+}
+
+function addCalendarMonths(
+  date: CalendarMonth,
+  months: number
+): CalendarMonth {
+  const value = new Date(
+    Date.UTC(
+      date.year,
+      date.month - 1 + months,
+      1
+    )
+  );
+
+  return {
+    year: value.getUTCFullYear(),
+    month: value.getUTCMonth() + 1,
+  };
+}
+
+function istMidnightToUTC(
+  date: CalendarDate
+): Date {
+  return new Date(
+    Date.UTC(
+      date.year,
+      date.month - 1,
+      date.day
+    ) - IST_OFFSET_MS
+  );
+}
+
+function isCancelled(
+  status: string | null | undefined
+): boolean {
+  return (
+    String(status ?? "")
+      .trim()
+      .toLowerCase() === "cancelled"
+  );
+}
+
 export default async function AdminDashboard() {
-  const supabase = await createSupabaseServerClient();
+  const supabase =
+    await createSupabaseServerClient();
+
+  // --------------------------------------------------
+  // AUTHENTICATION
+  // --------------------------------------------------
 
   const {
     data: { user },
@@ -14,15 +137,42 @@ export default async function AdminDashboard() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { data: profile } =
+    await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-  if (!profile || profile.role !== "admin") {
+  if (
+    !profile ||
+    profile.role !== "admin"
+  ) {
     redirect("/login");
   }
+
+  // --------------------------------------------------
+  // DATE HELPERS
+  // --------------------------------------------------
+
+  const now = new Date();
+
+  const today = getISTCalendarDate(
+    now
+  );
+
+  const startOfToday = istMidnightToUTC(
+    today
+  );
+
+  const startOfTomorrow =
+    istMidnightToUTC(
+      addCalendarDays(today, 1)
+    );
+
+  // --------------------------------------------------
+  // FETCH COUNTS
+  // --------------------------------------------------
 
   const [
     productsResult,
@@ -30,153 +180,656 @@ export default async function AdminDashboard() {
     paidOrdersResult,
     customersResult,
     inventoryResult,
-    recentOrdersResult,
+    pendingOrdersResult,
   ] = await Promise.all([
+    // Products
     supabase
       .from("products")
-      .select("*", { count: "exact", head: true }),
+      .select("*", {
+        count: "exact",
+        head: true,
+      }),
 
+    // Total orders
     supabase
       .from("orders")
-      .select("*", { count: "exact", head: true }),
+      .select("*", {
+        count: "exact",
+        head: true,
+      }),
 
+    // Paid orders
     supabase
       .from("orders")
-      .select("*", { count: "exact", head: true })
-      .eq("payment_status", "paid"),
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq(
+        "payment_status",
+        "paid"
+      ),
 
+    // Customers
     supabase
       .from("profiles")
-      .select("*", { count: "exact", head: true })
-      .eq("role", "customer"),
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq(
+        "role",
+        "customer"
+      ),
 
+    // Inventory items
     supabase
       .from("inventory")
-      .select("*", { count: "exact", head: true }),
+      .select("*", {
+        count: "exact",
+        head: true,
+      }),
 
+    // Preserve the original pending-order logic.
     supabase
       .from("orders")
-      .select(
-        "id, order_number, customer_name, total_amount, payment_status, status, created_at"
-      )
-      .order("created_at", { ascending: false })
-      .limit(5),
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .neq(
+        "status",
+        "delivered"
+      ),
   ]);
 
+  if (productsResult.error) {
+    throw productsResult.error;
+  }
+
+  if (ordersResult.error) {
+    throw ordersResult.error;
+  }
+
+  if (paidOrdersResult.error) {
+    throw paidOrdersResult.error;
+  }
+
+  if (customersResult.error) {
+    throw customersResult.error;
+  }
+
+  if (inventoryResult.error) {
+    throw inventoryResult.error;
+  }
+
+  if (pendingOrdersResult.error) {
+    throw pendingOrdersResult.error;
+  }
+
+  // --------------------------------------------------
+  // PAGINATED ORDER FETCH
+  // --------------------------------------------------
+  //
+  // Supabase/PostgREST can impose a default result limit.
+  // Pagination here prevents the dashboard from silently
+  // losing older order rows when there are many orders.
+  //
+
+  async function fetchOrderRows(
+    from: Date,
+    toExclusive: Date
+  ): Promise<OrderChartRow[]> {
+    const pageSize = 1000;
+    const rows: OrderChartRow[] = [];
+
+    let offset = 0;
+
+    while (true) {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("orders")
+        .select(
+          "id, created_at, total_amount, payment_status, status"
+        )
+        .gte(
+          "created_at",
+          from.toISOString()
+        )
+        .lt(
+          "created_at",
+          toExclusive.toISOString()
+        )
+        .order("created_at", {
+          ascending: true,
+        })
+        .range(
+          offset,
+          offset + pageSize - 1
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      const page =
+        (data ?? []) as OrderChartRow[];
+
+      rows.push(...page);
+
+      if (
+        page.length <
+        pageSize
+      ) {
+        break;
+      }
+
+      offset += pageSize;
+    }
+
+    return rows;
+  }
+
+  // --------------------------------------------------
+  // TODAY'S ORDERS / REVENUE
+  // --------------------------------------------------
+
+  const todayOrders =
+    await fetchOrderRows(
+      startOfToday,
+      startOfTomorrow
+    );
+
+  const todayRevenue =
+    todayOrders.reduce(
+      (total, order) => {
+        const paid =
+          String(
+            order.payment_status ??
+              ""
+          )
+            .trim()
+            .toLowerCase() ===
+          "paid";
+
+        if (
+          !paid ||
+          isCancelled(order.status)
+        ) {
+          return total;
+        }
+
+        return (
+          total +
+          Number(
+            order.total_amount ??
+              0
+          )
+        );
+      },
+      0
+    );
+
+  // --------------------------------------------------
+  // CHART RANGE
+  // --------------------------------------------------
+
+  const currentMonth: CalendarMonth =
+    {
+      year: today.year,
+      month: today.month,
+    };
+
+  const chartStartMonth =
+    addCalendarMonths(
+      currentMonth,
+      -11
+    );
+
+  const chartStart =
+    istMidnightToUTC({
+      year: chartStartMonth.year,
+      month: chartStartMonth.month,
+      day: 1,
+    });
+
+  const nextMonth =
+    addCalendarMonths(
+      currentMonth,
+      1
+    );
+
+  const chartEnd =
+    istMidnightToUTC({
+      year: nextMonth.year,
+      month: nextMonth.month,
+      day: 1,
+    });
+
+  const chartOrders =
+    await fetchOrderRows(
+      chartStart,
+      chartEnd
+    );
+
+  const nonCancelledChartOrders =
+    chartOrders.filter(
+      (order) =>
+        !isCancelled(
+          order.status
+        )
+    );
+
+  // --------------------------------------------------
+  // LAST 5 WEEKS
+  // --------------------------------------------------
+  //
+  // Five adjacent 7-day periods.
+  // The newest period always contains today.
+  //
+
+  const weeklyData: {
+    label: string;
+    count: number;
+  }[] = [];
+
+  const weeklyLabelFormatter =
+    new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        timeZone:
+          IST_TIME_ZONE,
+        day: "2-digit",
+        month: "short",
+      }
+    );
+
+  for (
+    let i = 4;
+    i >= 0;
+    i--
+  ) {
+    const endDate =
+      addCalendarDays(
+        today,
+        -i * 7
+      );
+
+    const startDate =
+      addCalendarDays(
+        endDate,
+        -6
+      );
+
+    const start =
+      istMidnightToUTC(
+        startDate
+      );
+
+    const endExclusive =
+      istMidnightToUTC(
+        addCalendarDays(
+          endDate,
+          1
+        )
+      );
+
+    const count =
+      nonCancelledChartOrders.filter(
+        (order) => {
+          const orderDate =
+            new Date(
+              order.created_at
+            );
+
+          return (
+            orderDate >= start &&
+            orderDate < endExclusive
+          );
+        }
+      ).length;
+
+    weeklyData.push({
+      label: `${weeklyLabelFormatter.format(
+        start
+      )} – ${weeklyLabelFormatter.format(
+        istMidnightToUTC(
+          endDate
+        )
+      )}`,
+      count,
+    });
+  }
+
+  const maxWeeklyOrders =
+    Math.max(
+      ...weeklyData.map(
+        (week) => week.count
+      ),
+      1
+    );
+
+  // --------------------------------------------------
+  // LAST 12 MONTHS
+  // --------------------------------------------------
+  //
+  // Uses calendar-month boundaries in IST.
+  //
+
+  const monthlyData: {
+    label: string;
+    count: number;
+  }[] = [];
+
+  const monthlyLabelFormatter =
+    new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        timeZone:
+          IST_TIME_ZONE,
+        month: "short",
+        year: "numeric",
+      }
+    );
+
+  for (
+    let i = 11;
+    i >= 0;
+    i--
+  ) {
+    const month =
+      addCalendarMonths(
+        currentMonth,
+        -i
+      );
+
+    const nextMonthForPeriod =
+      addCalendarMonths(
+        month,
+        1
+      );
+
+    const start =
+      istMidnightToUTC({
+        year: month.year,
+        month: month.month,
+        day: 1,
+      });
+
+    const endExclusive =
+      istMidnightToUTC({
+        year:
+          nextMonthForPeriod.year,
+        month:
+          nextMonthForPeriod.month,
+        day: 1,
+      });
+
+    const count =
+      nonCancelledChartOrders.filter(
+        (order) => {
+          const orderDate =
+            new Date(
+              order.created_at
+            );
+
+          return (
+            orderDate >= start &&
+            orderDate < endExclusive
+          );
+        }
+      ).length;
+
+    monthlyData.push({
+      label:
+        monthlyLabelFormatter.format(
+          start
+        ),
+      count,
+    });
+  }
+
+  const maxMonthlyOrders =
+    Math.max(
+      ...monthlyData.map(
+        (month) =>
+          month.count
+      ),
+      1
+    );
+
+  // --------------------------------------------------
+  // RETURN DASHBOARD
+  // --------------------------------------------------
+
   return (
-    <main className="p-6">
+    <main className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Dashboard
-        </h1>
+        {/* HEADER */}
 
-        <p className="mt-2 text-gray-600">
-          Store overview
-        </p>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Dashboard
+          </h1>
 
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            ["Products", productsResult.count ?? 0],
-            ["Orders", ordersResult.count ?? 0],
-            ["Paid Orders", paidOrdersResult.count ?? 0],
-            ["Customers", customersResult.count ?? 0],
-            ["Inventory Items", inventoryResult.count ?? 0],
-          ].map(([label, value]) => (
-            <div
-              key={label}
-              className="rounded-xl border bg-white p-5 shadow-sm"
-            >
-              <p className="text-sm text-gray-500">{label}</p>
-
-              <p className="mt-2 text-3xl font-bold text-gray-900">
-                {value}
-              </p>
-            </div>
-          ))}
+          <p className="mt-2 text-gray-600">
+            Store overview and performance
+          </p>
         </div>
 
-        <div className="mt-10 overflow-hidden rounded-xl border bg-white shadow-sm">
-          <div className="border-b px-6 py-5">
-            <h2 className="text-xl font-semibold">
-              Recent Orders
+        {/* --------------------------------------------------
+            STATISTICS
+        -------------------------------------------------- */}
+
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Today's Orders */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Today's Orders
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {todayOrders.length}
+            </p>
+          </div>
+
+          {/* Today's Revenue */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Today's Revenue
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              ₹{todayRevenue.toFixed(2)}
+            </p>
+          </div>
+
+          {/* Pending Orders */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Pending Orders
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {pendingOrdersResult.count ??
+                0}
+            </p>
+          </div>
+
+          {/* Total Orders */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Total Orders
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {ordersResult.count ??
+                0}
+            </p>
+          </div>
+
+          {/* Paid Orders */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Paid Orders
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {paidOrdersResult.count ??
+                0}
+            </p>
+          </div>
+
+          {/* Customers */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Customers
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {customersResult.count ??
+                0}
+            </p>
+          </div>
+
+          {/* Products */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Products
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {productsResult.count ??
+                0}
+            </p>
+          </div>
+
+          {/* Inventory Items */}
+
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-500">
+              Inventory Items
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-gray-900">
+              {inventoryResult.count ??
+                0}
+            </p>
+          </div>
+        </div>
+
+        {/* --------------------------------------------------
+            5 WEEK ORDERS GRAPH
+        -------------------------------------------------- */}
+
+        <section className="mt-10 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Orders — Last 5 Weeks
             </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Non-cancelled orders by 7-day period
+            </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    Order
-                  </th>
+          <div className="flex h-72 items-end gap-4 border-b border-gray-200 px-2">
+            {weeklyData.map(
+              (week) => {
+                const height =
+                  (week.count /
+                    maxWeeklyOrders) *
+                  100;
 
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    Customer
-                  </th>
+                return (
+                  <div
+                    key={week.label}
+                    className="flex h-full flex-1 flex-col justify-end"
+                  >
+                    <div className="mb-2 text-center text-sm font-semibold text-gray-700">
+                      {week.count}
+                    </div>
 
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    Amount
-                  </th>
+                    <div
+                      className="w-full rounded-t-lg bg-gray-900 transition-all"
+                      style={{
+                        height: `${Math.max(
+                          height,
+                          3
+                        )}%`,
+                      }}
+                    />
 
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    Payment
-                  </th>
-
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {(recentOrdersResult.data ?? []).map((order) => (
-                  <tr key={order.id} className="border-t">
-                    <td className="px-6 py-4 font-medium">
-                      {order.order_number}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      {order.customer_name}
-                    </td>
-
-                    <td className="px-6 py-4 font-medium">
-                      ₹{Number(order.total_amount).toFixed(2)}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          order.payment_status === "paid"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
-                      >
-                        {order.payment_status}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold">
-                        {order.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-
-                {!recentOrdersResult.data?.length && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      No orders found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                    <div className="mt-3 text-center text-xs text-gray-500">
+                      {week.label}
+                    </div>
+                  </div>
+                );
+              }
+            )}
           </div>
-        </div>
+        </section>
+
+        {/* --------------------------------------------------
+            12 MONTH ORDERS GRAPH
+        -------------------------------------------------- */}
+
+        <section className="mt-8 rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Orders — Last 12 Months
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Non-cancelled orders by calendar month
+            </p>
+          </div>
+
+          <div className="flex h-72 items-end gap-2 border-b border-gray-200 px-2 sm:gap-4">
+            {monthlyData.map(
+              (month) => {
+                const height =
+                  (month.count /
+                    maxMonthlyOrders) *
+                  100;
+
+                return (
+                  <div
+                    key={month.label}
+                    className="flex h-full flex-1 flex-col justify-end"
+                  >
+                    <div className="mb-2 text-center text-xs font-semibold text-gray-700">
+                      {month.count}
+                    </div>
+
+                    <div
+                      className="w-full rounded-t-lg bg-gray-700 transition-all"
+                      style={{
+                        height: `${Math.max(
+                          height,
+                          3
+                        )}%`,
+                      }}
+                    />
+
+                    <div className="mt-3 text-center text-xs text-gray-500">
+                      {month.label}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </section>
       </div>
     </main>
   );
