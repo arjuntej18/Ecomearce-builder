@@ -1,49 +1,48 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
 export async function GET(request: Request) {
-  const supabase = await createSupabaseServerClient();
+  const admin = await verifyAdmin();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403 }
+    );
   }
 
   const { searchParams } = new URL(request.url);
   const since = searchParams.get("since");
 
-  let query = supabase
-    .from("orders")
-    .select("id, order_number, customer_name, total_amount, created_at")
-    .eq("payment_status", "paid")
-    .order("created_at", { ascending: true });
+  const BACKEND_URL =
+    process.env.BACKEND_URL ?? "http://backend:4000";
+
+  const query = new URLSearchParams();
 
   if (since) {
-    query = query.gt("created_at", since);
+    query.set("since", since);
   }
 
-  const { data, error } = await query;
+  const response = await fetch(
+    `${BACKEND_URL}/api/admin/order-notifications${
+      query.toString()
+        ? `?${query.toString()}`
+        : ""
+    }`,
+    {
+      method: "GET",
+      cache: "no-store",
+    }
+  );
 
-  if (error) {
-    console.error("Order notification query failed:", error);
+  if (!response.ok) {
     return NextResponse.json(
       { error: "Failed to fetch orders" },
-      { status: 500 }
+      { status: response.status }
     );
   }
 
-  return NextResponse.json({ orders: data ?? [] });
+  const data = await response.json();
+
+  return NextResponse.json(data);
 }

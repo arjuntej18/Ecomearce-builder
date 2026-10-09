@@ -3,8 +3,9 @@
 // Product detail page with image gallery, variant selection, pricing and stock status.
 
 import { useEffect, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { useParams, useRouter } from "next/navigation";
+import { getGuestSessionId } from "@/lib/cart/guestCart";
+
 
 type ProductImage = {
   id: string;
@@ -72,122 +73,67 @@ const [touchMoved, setTouchMoved] =
   const [buying, setBuying] =
     useState(false);
 
+    const [addingToCart, setAddingToCart] =
+  useState(false);
+
   useEffect(() => {
     async function loadProduct() {
-      const supabase =
-        createSupabaseBrowserClient();
+  try {
+    const response = await fetch(
+      `/api/products/${encodeURIComponent(slug)}`
+    );
 
-      const {
-        data: productData,
-        error: productError,
-      } = await supabase
-        .from("products")
-        .select(
-          `
-          id,
-          name,
-          slug,
-          description,
-          main_image_url,
-          product_images (
-            id,
-            image_url,
-            sort_order
-          )
-        `
-        )
-        .eq("slug", slug)
-        .eq("is_active", true)
-        .single();
-
-      if (productError || !productData) {
-        console.error(productError);
-        setLoading(false);
-        return;
-      }
-
-      const {
-        data: variantData,
-        error: variantError,
-      } = await supabase
-        .from("product_variants")
-        .select(
-          "id, sku, size, color, price, original_price, discount_percent, is_active"
-        )
-        .eq("product_id", productData.id)
-        .eq("is_active", true)
-        .order("size", {
-          ascending: true,
-        });
-
-      if (variantError) {
-        console.error(variantError);
-      }
-
-      const loadedVariants =
-        variantData ?? [];
-
-      const variantIds =
-        loadedVariants.map(
-          (variant) => variant.id
-        );
-
-      let loadedInventory: Inventory[] = [];
-
-      if (variantIds.length > 0) {
-        const {
-          data: inventoryData,
-          error: inventoryError,
-        } = await supabase
-          .from("inventory")
-          .select(
-            "variant_id, quantity"
-          )
-          .in(
-            "variant_id",
-            variantIds
-          );
-
-        if (inventoryError) {
-          console.error(
-            inventoryError
-          );
-        } else {
-          loadedInventory =
-            inventoryData ?? [];
-        }
-      }
-
-      const sortedImages =
-        (
-          productData.product_images ??
-          []
-        )
-          .slice()
-          .sort(
-            (a, b) =>
-              a.sort_order - b.sort_order
-          );
-
-      const finalProduct: Product = {
-        ...productData,
-        product_images:
-          sortedImages,
-      };
-
-      setProduct(finalProduct);
-      setVariants(loadedVariants);
-      setInventory(loadedInventory);
-
-      if (loadedVariants.length > 0) {
-        setSelectedVariant(
-          loadedVariants[0]
-        );
-      }
-
-      setSelectedImageIndex(0);
-      setLoading(false);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to load product: ${response.status}`
+      );
     }
+
+    const data = await response.json();
+
+    if (!data.product) {
+      throw new Error("Product not found");
+    }
+
+    const loadedVariants: Variant[] =
+      data.variants ?? [];
+
+    const loadedInventory: Inventory[] =
+      data.inventory ?? [];
+
+    const sortedImages =
+      (data.product.product_images ?? [])
+        .slice()
+        .sort(
+          (a: ProductImage, b: ProductImage) =>
+            a.sort_order - b.sort_order
+        );
+
+    const finalProduct: Product = {
+      id: data.product.id,
+      name: data.product.name,
+      slug: data.product.slug,
+      description: data.product.description ?? null,
+      main_image_url:
+        data.product.main_image_url ?? null,
+      product_images: sortedImages,
+    };
+
+    setProduct(finalProduct);
+    setVariants(loadedVariants);
+    setInventory(loadedInventory);
+
+    if (loadedVariants.length > 0) {
+      setSelectedVariant(loadedVariants[0]);
+    }
+
+    setSelectedImageIndex(0);
+  } catch (error) {
+    console.error("Failed to load product:", error);
+  } finally {
+    setLoading(false);
+  }
+}
 
     loadProduct();
   }, [slug]);
@@ -259,11 +205,66 @@ const [touchMoved, setTouchMoved] =
     setBuying(true);
 
     router.push(
-      `/checkout?buyVariant=${encodeURIComponent(
-        selectedVariant.id
-      )}&quantity=1`
-    );
+  `/checkout?buyVariant=${encodeURIComponent(selectedVariant.id)}&quantity=1`
+);
   }
+
+
+
+async function handleAddToCart() {
+  if (!selectedVariant) {
+    alert("Please select a size and color.");
+    return;
+  }
+
+  const stock = getStock(selectedVariant.id);
+
+  if (stock <= 0) {
+    alert("This option is currently out of stock.");
+    return;
+  }
+
+  if (
+    selectedVariant.price == null ||
+    Number(selectedVariant.price) <= 0
+  ) {
+    alert("This product has an invalid price.");
+    return;
+  }
+
+  setAddingToCart(true);
+
+  try {
+    const response = await fetch("/api/cart", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId: (await import("@/lib/cart/guestCart")).getGuestSessionId(),
+        variantId: selectedVariant.id,
+        quantity: 1,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error || "Failed to add item to cart"
+      );
+    }
+
+    alert("Added to cart.");
+  } catch (error) {
+    console.error("Add to cart failed:", error);
+    alert("Failed to add item to cart.");
+  } finally {
+    setAddingToCart(false);
+  }
+}
+
+
 
   if (loading) {
     return (
@@ -431,7 +432,7 @@ const [touchMoved, setTouchMoved] =
                   alt={product.name}
                   draggable={false}
                   className="aspect-square w-full object-cover select-none transition-opacity duration-150"
-                
+
                 />
               ) : (
                 <div className="flex aspect-square items-center justify-center text-[#8b776a]">
@@ -778,32 +779,52 @@ const [touchMoved, setTouchMoved] =
               )}
             </div>
 
-            {/* BUY BUTTON */}
-            <button
-              type="button"
-              onClick={
-                handleBuyNow
-              }
-              disabled={
-                buying ||
-                !selectedVariant ||
-                selectedOutOfStock
-              }
-              className="mt-6 w-full rounded-xl bg-[#72263a] px-6 py-4 text-base font-semibold text-white transition hover:bg-[#5d1e2f] disabled:cursor-not-allowed disabled:bg-[#b8aaa0]"
-            >
-              {buying
-                ? "Opening checkout..."
-                : selectedOutOfStock
-                ? "Out of Stock"
-                : selectedVariant
-                ? `Buy Now — ₹${selectedPrice?.toFixed(
-                    2
-                  )}`
-                : "Select an option"}
-            </button>
+            {/* CART + BUY BUTTONS */}
+<div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+  <button
+    type="button"
+    onClick={handleAddToCart}
+    disabled={
+      addingToCart ||
+      buying ||
+      !selectedVariant ||
+      selectedOutOfStock
+    }
+    className="w-full rounded-xl border-2 border-[#72263a] bg-white px-6 py-4 text-base font-semibold text-[#72263a] transition hover:bg-[#f8eee9] disabled:cursor-not-allowed disabled:border-[#b8aaa0] disabled:text-[#8b776a]"
+  >
+    {addingToCart
+      ? "Adding..."
+      : selectedOutOfStock
+      ? "Out of Stock"
+      : selectedVariant
+      ? "Add to Cart"
+      : "Select an option"}
+  </button>
+
+
+  <button
+    type="button"
+    onClick={handleBuyNow}
+    disabled={
+      buying ||
+      addingToCart ||
+      !selectedVariant ||
+      selectedOutOfStock
+    }
+    className="w-full rounded-xl bg-[#72263a] px-6 py-4 text-base font-semibold text-white transition hover:bg-[#5d1e2f] disabled:cursor-not-allowed disabled:bg-[#b8aaa0]"
+  >
+    {buying
+      ? "Opening checkout..."
+      : selectedOutOfStock
+      ? "Out of Stock"
+      : selectedVariant
+      ? `Buy Now — ₹${selectedPrice?.toFixed(2)}`
+      : "Select an option"}
+  </button>
+</div>
           </div>
         </div>
       </div>
     </main>
   );
-}   
+}

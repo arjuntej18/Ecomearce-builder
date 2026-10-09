@@ -1,13 +1,8 @@
-// Secure admin-only API for loading and updating a product, variants, prices and discounts.
-
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 type Params = {
   params: Promise<{
@@ -15,136 +10,43 @@ type Params = {
   }>;
 };
 
-type VariantUpdate = {
-  id: string;
-  price: number;
-  original_price?: number;
-  discount_percent?: number;
-};
-
-async function verifyAdmin() {
-  const supabase =
-    await createSupabaseServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return false;
-  }
-
-  const { data: profile } =
-    await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-  return profile?.role === "admin";
-}
-
 export async function GET(
   _request: Request,
   { params }: Params
 ) {
   try {
-    if (!(await verifyAdmin())) {
+    const admin = await verifyAdmin();
+
+    if (!admin) {
       return NextResponse.json(
-        {
-          error:
-            "Admin access required.",
-        },
+        { error: "Admin access required." },
         { status: 403 }
       );
     }
 
     const { id } = await params;
 
-    const {
-      data: product,
-      error: productError,
-    } = await supabaseAdmin
-      .from("products")
-      .select(
-        `
-        id,
-        category_id,
-        name,
-        slug,
-        description,
-        brand,
-        base_price,
-        sale_price,
-        main_image_url,
-        is_featured,
-        is_active
-        `
-      )
-      .eq("id", id)
-      .single();
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/products/${id}`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
 
-    if (
-      productError ||
-      !product
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Product not found.",
-        },
-        { status: 404 }
-      );
-    }
+    const data = await response.json();
 
-    const {
-      data: variants,
-      error: variantsError,
-    } = await supabaseAdmin
-      .from("product_variants")
-      .select(
-        `
-        id,
-        product_id,
-        sku,
-        size,
-        color,
-        price,
-        original_price,
-        discount_percent,
-        is_active
-        `
-      )
-      .eq("product_id", id)
-      .order("id");
-
-    if (variantsError) {
-      console.error(
-        variantsError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Unable to load product variants.",
-        },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      product,
-      variants:
-        variants ?? [],
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "ADMIN PRODUCT GET ERROR:",
+      error
+    );
 
     return NextResponse.json(
-      {
-        error:
-          "Unable to load product.",
-      },
+      { error: "Unable to load product." },
       { status: 500 }
     );
   }
@@ -155,12 +57,11 @@ export async function PATCH(
   { params }: Params
 ) {
   try {
-    if (!(await verifyAdmin())) {
+    const admin = await verifyAdmin();
+
+    if (!admin) {
       return NextResponse.json(
-        {
-          error:
-            "Admin access required.",
-        },
+        { error: "Admin access required." },
         { status: 403 }
       );
     }
@@ -168,467 +69,44 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const {
-      name,
-      slug,
-      description,
-      brand,
-      base_price,
-      sale_price,
-      category_id,
-      main_image_url,
-      is_featured,
-      is_active,
-      variants,
-    } = body;
-
-    if (
-      !name?.trim() ||
-      !slug?.trim() ||
-      base_price === undefined
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Name, slug and base price are required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const numericBasePrice =
-      Number(base_price);
-
-    if (
-      !Number.isFinite(
-        numericBasePrice
-      ) ||
-      numericBasePrice <= 0
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Base price must be greater than zero.",
-        },
-        { status: 400 }
-      );
-    }
-
-    let numericSalePrice:
-      | number
-      | null = null;
-
-    if (
-      sale_price !== "" &&
-      sale_price != null
-    ) {
-      numericSalePrice =
-        Number(sale_price);
-
-      if (
-        !Number.isFinite(
-          numericSalePrice
-        ) ||
-        numericSalePrice < 0
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Sale price is invalid.",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Validate category.
-    if (category_id) {
-      const {
-        data: category,
-        error: categoryError,
-      } = await supabaseAdmin
-        .from("categories")
-        .select("id")
-        .eq(
-          "id",
-          category_id
-        )
-        .maybeSingle();
-
-      if (
-        categoryError ||
-        !category
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Selected category was not found.",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Validate variant updates.
-    let variantUpdates:
-      VariantUpdate[] = [];
-
-    if (
-      Array.isArray(variants)
-    ) {
-      variantUpdates =
-        variants.map(
-          (variant) => ({
-            id: String(
-              variant.id
-            ),
-            price: Number(
-              variant.price
-            ),
-            original_price:
-              variant.original_price ==
-              null
-                ? undefined
-                : Number(
-                    variant.original_price
-                  ),
-            discount_percent:
-              variant.discount_percent ==
-              null
-                ? undefined
-                : Number(
-                    variant.discount_percent
-                  ),
-          })
-        );
-
-      for (const variant of
-        variantUpdates) {
-        if (
-          !variant.id ||
-          !Number.isFinite(
-            variant.price
-          ) ||
-          variant.price <= 0
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "Every variant price must be greater than zero.",
-            },
-            { status: 400 }
-          );
-        }
-
-        if (
-          variant.original_price !==
-          undefined &&
-          (
-            !Number.isFinite(
-              variant.original_price
-            ) ||
-            variant.original_price <= 0
-          )
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "Every original price must be greater than zero.",
-            },
-            { status: 400 }
-          );
-        }
-
-        if (
-          variant.discount_percent !==
-          undefined &&
-          (
-            !Number.isFinite(
-              variant.discount_percent
-            ) ||
-            variant.discount_percent < 0 ||
-            variant.discount_percent >= 100
-          )
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "Discount percentage must be between 0 and 99.",
-            },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Make sure the variants belong to this product.
-    if (variantUpdates.length) {
-      const {
-        data: existingVariants,
-        error: existingVariantsError,
-      } = await supabaseAdmin
-        .from("product_variants")
-        .select("id")
-        .eq(
-          "product_id",
-          id
-        )
-        .in(
-          "id",
-          variantUpdates.map(
-            (variant) =>
-              variant.id
-          )
-        );
-
-      if (existingVariantsError) {
-        console.error(
-          existingVariantsError
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Unable to validate variants.",
-          },
-          { status: 500 }
-        );
-      }
-
-      const validIds = new Set(
-        (
-          existingVariants ??
-          []
-        ).map(
-          (variant) =>
-            variant.id
-        )
-      );
-
-      const invalidVariant =
-        variantUpdates.find(
-          (variant) =>
-            !validIds.has(
-              variant.id
-            )
-        );
-
-      if (invalidVariant) {
-        return NextResponse.json(
-          {
-            error:
-              "One or more variants do not belong to this product.",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Update product.
-    const {
-      data: product,
-      error: productUpdateError,
-    } = await supabaseAdmin
-      .from("products")
-      .update({
-        category_id:
-          category_id || null,
-
-        name: String(
-          name
-        ).trim(),
-
-        slug: String(
-          slug
-        ).trim(),
-
-        description:
-          String(
-            description || ""
-          ).trim() || null,
-
-        brand:
-          String(
-            brand || ""
-          ).trim() || null,
-
-        base_price:
-          numericBasePrice,
-
-        sale_price:
-          numericSalePrice,
-
-        main_image_url:
-          String(
-            main_image_url || ""
-          ).trim() || null,
-
-        is_featured:
-          Boolean(
-            is_featured
-          ),
-
-        is_active:
-          Boolean(
-            is_active
-          ),
-
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", id)
-      .select(
-        `
-        id,
-        category_id,
-        name,
-        slug,
-        description,
-        brand,
-        base_price,
-        sale_price,
-        main_image_url,
-        is_featured,
-        is_active,
-        updated_at
-        `
-      )
-      .single();
-
-    if (
-      productUpdateError ||
-      !product
-    ) {
-      console.error(
-        productUpdateError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            productUpdateError?.message ||
-            "Unable to update product.",
-        },
-        { status: 500 }
-      );
-    }
-
-    // Update variant pricing and discount information.
-    for (const variant of
-      variantUpdates) {
-      const updateData: {
-        price: number;
-        original_price?: number;
-        discount_percent?: number;
-      } = {
-        price:
-          variant.price,
-      };
-
-      if (
-        variant.original_price !==
-        undefined
-      ) {
-        updateData.original_price =
-          variant.original_price;
-      }
-
-      if (
-        variant.discount_percent !==
-        undefined
-      ) {
-        updateData.discount_percent =
-          variant.discount_percent;
-      }
-
-      const {
-        error:
-          variantUpdateError,
-      } = await supabaseAdmin
-        .from("product_variants")
-        .update(updateData)
-        .eq(
-          "id",
-          variant.id
-        )
-        .eq(
-          "product_id",
-          id
-        );
-
-      if (variantUpdateError) {
-        console.error(
-          variantUpdateError
-        );
-
-        return NextResponse.json(
-          {
-            error:
-              "Product was updated, but a variant could not be updated.",
-          },
-          { status: 500 }
-        );
-      }
-    }
-
-    const {
-      data: updatedVariants,
-      error:
-        updatedVariantsError,
-    } = await supabaseAdmin
-      .from("product_variants")
-      .select(
-        `
-        id,
-        product_id,
-        sku,
-        size,
-        color,
-        price,
-        original_price,
-        discount_percent,
-        is_active
-        `
-      )
-      .eq(
-        "product_id",
-        id
-      )
-      .order("id");
-
-    if (updatedVariantsError) {
-      console.error(
-        updatedVariantsError
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      product,
-      variants:
-        updatedVariants ?? [],
-    });
-  } 
-  
-  catch (error) {
-    console.error(error);
-
-    return NextResponse.json(
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/products/${id}`,
       {
-        error:
-          "Unable to update product.",
-      },
-      { status: 500 }
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      }
     );
 
+    const data = await response.json();
+
+    return NextResponse.json(data, {
+      status: response.status,
+    });
+  } catch (error) {
+    console.error(
+      "ADMIN PRODUCT PATCH ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      { error: "Unable to update product." },
+      { status: 500 }
+    );
   }
 }
+
 export async function DELETE(
   _request: Request,
   { params }: Params
 ) {
   try {
-    if (!(await verifyAdmin())) {
+    const admin = await verifyAdmin();
+
+    if (!admin) {
       return NextResponse.json(
         { error: "Admin access required." },
         { status: 403 }
@@ -637,72 +115,24 @@ export async function DELETE(
 
     const { id } = await params;
 
-    // Get product images first so we can remove them from storage.
-    const { data: images, error: imagesError } = await supabaseAdmin
-      .from("product_images")
-      .select("image_url")
-      .eq("product_id", id);
-
-    if (imagesError) {
-      console.error(imagesError);
-      return NextResponse.json(
-        { error: "Unable to load product images." },
-        { status: 500 }
-      );
-    }
-
-    // Delete product. Related variants, inventory and product_images
-    // should be removed by the database foreign-key cascade.
-    const { error: deleteError } = await supabaseAdmin
-      .from("products")
-      .delete()
-      .eq("id", id);
-
-    if (deleteError) {
-      console.error(deleteError);
-
-      return NextResponse.json(
-        {
-          error:
-            "Unable to delete product. It may be referenced by existing orders.",
-        },
-        { status: 500 }
-      );
-    }
-
-    // Remove uploaded files from Supabase Storage.
-    if (images?.length) {
-      const paths = images
-        .map((image) => {
-          const marker = "/storage/v1/object/public/public-image/";
-          const index = image.image_url.indexOf(marker);
-
-          if (index === -1) return null;
-
-          return decodeURIComponent(
-            image.image_url.slice(index + marker.length)
-          );
-        })
-        .filter((path): path is string => Boolean(path));
-
-      if (paths.length) {
-        const { error: storageError } =
-          await supabaseAdmin.storage
-            .from("public-image")
-            .remove(paths);
-
-        if (storageError) {
-          console.error(storageError);
-        }
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/products/${id}`,
+      {
+        method: "DELETE",
+        cache: "no-store",
       }
-    }
+    );
 
-    return NextResponse.json({
-      success: true,
-      message: "Product deleted successfully.",
+    const data = await response.json();
+
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "ADMIN PRODUCT DELETE ERROR:",
+      error
+    );
 
     return NextResponse.json(
       { error: "Unable to delete product." },

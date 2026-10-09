@@ -1,7 +1,7 @@
 // app/admin/page.tsx
 
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
 const IST_TIME_ZONE = "Asia/Kolkata";
 const IST_OFFSET_MS =
@@ -24,6 +24,16 @@ type OrderChartRow = {
   total_amount: number | null;
   payment_status: string | null;
   status: string | null;
+};
+
+type DashboardData = {
+  products: number;
+  orders: number;
+  paidOrders: number;
+  customers: number;
+  inventoryItems: number;
+  pendingOrders: number;
+  chartOrders: OrderChartRow[];
 };
 
 function getISTCalendarDate(
@@ -122,34 +132,48 @@ function isCancelled(
 }
 
 export default async function AdminDashboard() {
-  const supabase =
-    await createSupabaseServerClient();
-
   // --------------------------------------------------
   // AUTHENTICATION
   // --------------------------------------------------
 
+  const admin = await verifyAdmin();
+
+if (!admin) {
+  redirect("/login");
+}
+  // --------------------------------------------------
+  // FETCH LOCAL POSTGRESQL DASHBOARD DATA
+  // --------------------------------------------------
+
+  const BACKEND_URL =
+    process.env.BACKEND_URL ??
+    "http://backend:4000";
+
+  const response = await fetch(
+    `${BACKEND_URL}/api/admin/dashboard`,
+    {
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "Unable to load dashboard data."
+    );
+  }
+
+  const dashboard =
+    (await response.json()) as DashboardData;
+
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile } =
-    await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-  if (
-    !profile ||
-    profile.role !== "admin"
-  ) {
-    redirect("/login");
-  }
+    products,
+    orders,
+    paidOrders,
+    customers,
+    inventoryItems,
+    pendingOrders,
+    chartOrders,
+  } = dashboard;
 
   // --------------------------------------------------
   // DATE HELPERS
@@ -161,9 +185,8 @@ export default async function AdminDashboard() {
     now
   );
 
-  const startOfToday = istMidnightToUTC(
-    today
-  );
+  const startOfToday =
+    istMidnightToUTC(today);
 
   const startOfTomorrow =
     istMidnightToUTC(
@@ -171,188 +194,29 @@ export default async function AdminDashboard() {
     );
 
   // --------------------------------------------------
-  // FETCH COUNTS
-  // --------------------------------------------------
-
-  const [
-    productsResult,
-    ordersResult,
-    paidOrdersResult,
-    customersResult,
-    inventoryResult,
-    pendingOrdersResult,
-  ] = await Promise.all([
-    // Products
-    supabase
-      .from("products")
-      .select("*", {
-        count: "exact",
-        head: true,
-      }),
-
-    // Total orders
-    supabase
-      .from("orders")
-      .select("*", {
-        count: "exact",
-        head: true,
-      }),
-
-    // Paid orders
-    supabase
-      .from("orders")
-      .select("*", {
-        count: "exact",
-        head: true,
-      })
-      .eq(
-        "payment_status",
-        "paid"
-      ),
-
-    // Customers
-    supabase
-      .from("profiles")
-      .select("*", {
-        count: "exact",
-        head: true,
-      })
-      .eq(
-        "role",
-        "customer"
-      ),
-
-    // Inventory items
-    supabase
-      .from("inventory")
-      .select("*", {
-        count: "exact",
-        head: true,
-      }),
-
-    // Preserve the original pending-order logic.
-    supabase
-      .from("orders")
-      .select("*", {
-        count: "exact",
-        head: true,
-      })
-      .neq(
-        "status",
-        "delivered"
-      ),
-  ]);
-
-  if (productsResult.error) {
-    throw productsResult.error;
-  }
-
-  if (ordersResult.error) {
-    throw ordersResult.error;
-  }
-
-  if (paidOrdersResult.error) {
-    throw paidOrdersResult.error;
-  }
-
-  if (customersResult.error) {
-    throw customersResult.error;
-  }
-
-  if (inventoryResult.error) {
-    throw inventoryResult.error;
-  }
-
-  if (pendingOrdersResult.error) {
-    throw pendingOrdersResult.error;
-  }
-
-  // --------------------------------------------------
-  // PAGINATED ORDER FETCH
-  // --------------------------------------------------
-  //
-  // Supabase/PostgREST can impose a default result limit.
-  // Pagination here prevents the dashboard from silently
-  // losing older order rows when there are many orders.
-  //
-
-  async function fetchOrderRows(
-    from: Date,
-    toExclusive: Date
-  ): Promise<OrderChartRow[]> {
-    const pageSize = 1000;
-    const rows: OrderChartRow[] = [];
-
-    let offset = 0;
-
-    while (true) {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("orders")
-        .select(
-          "id, created_at, total_amount, payment_status, status"
-        )
-        .gte(
-          "created_at",
-          from.toISOString()
-        )
-        .lt(
-          "created_at",
-          toExclusive.toISOString()
-        )
-        .order("created_at", {
-          ascending: true,
-        })
-        .range(
-          offset,
-          offset + pageSize - 1
-        );
-
-      if (error) {
-        throw error;
-      }
-
-      const page =
-        (data ?? []) as OrderChartRow[];
-
-      rows.push(...page);
-
-      if (
-        page.length <
-        pageSize
-      ) {
-        break;
-      }
-
-      offset += pageSize;
-    }
-
-    return rows;
-  }
-
-  // --------------------------------------------------
   // TODAY'S ORDERS / REVENUE
   // --------------------------------------------------
 
   const todayOrders =
-    await fetchOrderRows(
-      startOfToday,
-      startOfTomorrow
-    );
+    chartOrders.filter((order) => {
+      const orderDate =
+        new Date(order.created_at);
+
+      return (
+        orderDate >= startOfToday &&
+        orderDate < startOfTomorrow
+      );
+    });
 
   const todayRevenue =
     todayOrders.reduce(
       (total, order) => {
         const paid =
           String(
-            order.payment_status ??
-              ""
+            order.payment_status ?? ""
           )
             .trim()
-            .toLowerCase() ===
-          "paid";
+            .toLowerCase() === "paid";
 
         if (
           !paid ||
@@ -364,8 +228,7 @@ export default async function AdminDashboard() {
         return (
           total +
           Number(
-            order.total_amount ??
-              0
+            order.total_amount ?? 0
           )
         );
       },
@@ -376,11 +239,10 @@ export default async function AdminDashboard() {
   // CHART RANGE
   // --------------------------------------------------
 
-  const currentMonth: CalendarMonth =
-    {
-      year: today.year,
-      month: today.month,
-    };
+  const currentMonth: CalendarMonth = {
+    year: today.year,
+    month: today.month,
+  };
 
   const chartStartMonth =
     addCalendarMonths(
@@ -408,27 +270,26 @@ export default async function AdminDashboard() {
       day: 1,
     });
 
-  const chartOrders =
-    await fetchOrderRows(
-      chartStart,
-      chartEnd
-    );
+  const chartRangeOrders =
+    chartOrders.filter((order) => {
+      const orderDate =
+        new Date(order.created_at);
+
+      return (
+        orderDate >= chartStart &&
+        orderDate < chartEnd
+      );
+    });
 
   const nonCancelledChartOrders =
-    chartOrders.filter(
+    chartRangeOrders.filter(
       (order) =>
-        !isCancelled(
-          order.status
-        )
+        !isCancelled(order.status)
     );
 
   // --------------------------------------------------
   // LAST 5 WEEKS
   // --------------------------------------------------
-  //
-  // Five adjacent 7-day periods.
-  // The newest period always contains today.
-  //
 
   const weeklyData: {
     label: string;
@@ -439,8 +300,7 @@ export default async function AdminDashboard() {
     new Intl.DateTimeFormat(
       "en-IN",
       {
-        timeZone:
-          IST_TIME_ZONE,
+        timeZone: IST_TIME_ZONE,
         day: "2-digit",
         month: "short",
       }
@@ -495,9 +355,7 @@ export default async function AdminDashboard() {
       label: `${weeklyLabelFormatter.format(
         start
       )} – ${weeklyLabelFormatter.format(
-        istMidnightToUTC(
-          endDate
-        )
+        istMidnightToUTC(endDate)
       )}`,
       count,
     });
@@ -514,9 +372,6 @@ export default async function AdminDashboard() {
   // --------------------------------------------------
   // LAST 12 MONTHS
   // --------------------------------------------------
-  //
-  // Uses calendar-month boundaries in IST.
-  //
 
   const monthlyData: {
     label: string;
@@ -527,8 +382,7 @@ export default async function AdminDashboard() {
     new Intl.DateTimeFormat(
       "en-IN",
       {
-        timeZone:
-          IST_TIME_ZONE,
+        timeZone: IST_TIME_ZONE,
         month: "short",
         year: "numeric",
       }
@@ -619,9 +473,7 @@ export default async function AdminDashboard() {
           </p>
         </div>
 
-        {/* --------------------------------------------------
-            STATISTICS
-        -------------------------------------------------- */}
+        {/* STATISTICS */}
 
         <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {/* Today's Orders */}
@@ -656,8 +508,7 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {pendingOrdersResult.count ??
-                0}
+              {pendingOrders}
             </p>
           </div>
 
@@ -669,8 +520,7 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {ordersResult.count ??
-                0}
+              {orders}
             </p>
           </div>
 
@@ -682,8 +532,7 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {paidOrdersResult.count ??
-                0}
+              {paidOrders}
             </p>
           </div>
 
@@ -695,8 +544,7 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {customersResult.count ??
-                0}
+              {customers}
             </p>
           </div>
 
@@ -708,8 +556,7 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {productsResult.count ??
-                0}
+              {products}
             </p>
           </div>
 
@@ -721,15 +568,12 @@ export default async function AdminDashboard() {
             </p>
 
             <p className="mt-2 text-3xl font-bold text-gray-900">
-              {inventoryResult.count ??
-                0}
+              {inventoryItems}
             </p>
           </div>
         </div>
 
-        {/* --------------------------------------------------
-            5 WEEK ORDERS GRAPH
-        -------------------------------------------------- */}
+        {/* 5 WEEK ORDERS GRAPH */}
 
         <section className="mt-10 rounded-xl border bg-white p-6 shadow-sm">
           <div className="mb-8">
@@ -779,9 +623,7 @@ export default async function AdminDashboard() {
           </div>
         </section>
 
-        {/* --------------------------------------------------
-            12 MONTH ORDERS GRAPH
-        -------------------------------------------------- */}
+        {/* 12 MONTH ORDERS GRAPH */}
 
         <section className="mt-8 rounded-xl border bg-white p-6 shadow-sm">
           <div className="mb-8">

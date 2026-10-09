@@ -1,13 +1,8 @@
-// Verifies Razorpay webhook signatures and updates payment/order status.
-
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 export async function POST(request: Request) {
   try {
@@ -46,48 +41,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = JSON.parse(rawBody);
-
-    if (payload.event === "payment.captured") {
-      const payment = payload.payload?.payment?.entity;
-
-      if (!payment) {
-        return NextResponse.json({ received: true });
+    const response = await fetch(
+      `${BACKEND_URL}/api/payments/webhook`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: rawBody,
+        cache: "no-store",
       }
+    );
 
-      const razorpayOrderId = payment.order_id;
-      const razorpayPaymentId = payment.id;
+    const data = await response.json();
 
-      const { data: paymentRecord } = await supabase
-        .from("payments")
-        .select("id, order_id")
-        .eq("provider_order_id", razorpayOrderId)
-        .maybeSingle();
-
-      if (paymentRecord) {
-        await supabase
-          .from("payments")
-          .update({
-            provider_payment_id: razorpayPaymentId,
-            status: "paid",
-          })
-          .eq("id", paymentRecord.id);
-
-        await supabase
-          .from("orders")
-          .update({
-            payment_status: "paid",
-            status: "confirmed",
-          })
-          .eq("id", paymentRecord.order_id);
-      }
-    }
-
-    return NextResponse.json({
-      received: true,
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Razorpay webhook error:", error);
 
     return NextResponse.json(
       { error: "Webhook processing failed." },

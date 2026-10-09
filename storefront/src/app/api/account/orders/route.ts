@@ -1,94 +1,72 @@
-// Returns orders belonging to the authenticated customer.
-
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
-export async function GET() {
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
+
+export async function GET(request: Request) {
   try {
-    const supabase =
-      await createSupabaseServerClient();
+    const cookie = request.headers.get("cookie") ?? "";
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const sessionResponse = await fetch(
+      `${BACKEND_URL}/api/auth/session`,
+      {
+        headers: {
+          cookie,
+        },
+        cache: "no-store",
+      }
+    );
 
-    if (!user) {
+    if (!sessionResponse.ok) {
       return NextResponse.json(
         {
           error: "Authentication required.",
         },
-        { status: 401 }
+        {
+          status: sessionResponse.status,
+        }
       );
     }
 
-    const {
-      data: profile,
-    } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
+    const session = await sessionResponse.json();
 
-    if (
-      profile?.role !== "customer"
-    ) {
+    if (session.role !== "customer") {
       return NextResponse.json(
         {
-          error:
-            "Customer access required.",
+          error: "Customer access required.",
         },
         { status: 403 }
       );
     }
 
-    const {
-      data: orders,
-      error,
-    } = await supabase
-      .from("orders")
-      .select(
-        `
-        id,
-        order_number,
-        total_amount,
-        status,
-        payment_status,
-        created_at
-        `
-      )
-      .eq(
-        "user_id",
-        user.id
-      )
-      .order(
-        "created_at",
-        {
-          ascending: false,
-        }
-      );
+    const ordersResponse = await fetch(
+  `${BACKEND_URL}/api/account/orders/${session.userId}`,
+  {
+    headers: {
+      cookie,
+    },
+    cache: "no-store",
+  }
+);
 
-    if (error) {
-      console.error(error);
-
+    if (!ordersResponse.ok) {
       return NextResponse.json(
         {
-          error:
-            "Unable to load orders.",
+          error: "Unable to load orders.",
         },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      orders: orders ?? [],
-    });
+    const data = await ordersResponse.json();
+
+    return NextResponse.json(data);
   } catch (error) {
     console.error(error);
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load orders.",
+        error: "Unable to load orders.",
       },
       { status: 500 }
     );

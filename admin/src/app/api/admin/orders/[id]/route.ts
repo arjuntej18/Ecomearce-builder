@@ -1,35 +1,8 @@
-// Loads one complete order securely for an authenticated admin.
-
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-async function verifyAdmin() {
-  const supabase =
-    await createSupabaseServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return false;
-  }
-
-  const { data: profile } =
-    await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-  return profile?.role === "admin";
-}
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 export async function GET(
   request: Request,
@@ -38,11 +11,12 @@ export async function GET(
   }
 ) {
   try {
-    if (!(await verifyAdmin())) {
+    const admin = await verifyAdmin();
+
+    if (!admin) {
       return NextResponse.json(
         {
-          error:
-            "Admin access required.",
+          error: "Admin access required.",
         },
         { status: 403 }
       );
@@ -53,105 +27,31 @@ export async function GET(
     if (!id) {
       return NextResponse.json(
         {
-          error:
-            "Order ID is required.",
+          error: "Order ID is required.",
         },
         { status: 400 }
       );
     }
 
-    const {
-      data: order,
-      error: orderError,
-    } = await supabaseAdmin
-      .from("orders")
-      .select(
-        `
-        id,
-        order_number,
-        customer_name,
-        customer_email,
-        customer_phone,
-        address_line1,
-        address_line2,
-        city,
-        state,
-        postal_code,
-        country,
-        subtotal,
-        discount,
-        shipping_fee,
-        total_amount,
-        status,
-        payment_status,
-        tracking_number,
-        invoice_number,
-        created_at,
-        updated_at
-        `
-      )
-      .eq("id", id)
-      .single();
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/orders/${encodeURIComponent(id)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
 
-    if (orderError || !order) {
-      console.error(orderError);
+    const data = await response.json();
 
-      return NextResponse.json(
-        {
-          error:
-            "Order not found.",
-        },
-        { status: 404 }
-      );
-    }
-
-    const {
-      data: items,
-      error: itemsError,
-    } = await supabaseAdmin
-      .from("order_items")
-      .select(
-        `
-        id,
-        order_id,
-        variant_id,
-        product_name,
-        variant_name,
-        sku,
-        quantity,
-        unit_price,
-        total_price,
-        created_at
-        `
-      )
-      .eq("order_id", id)
-      .order("created_at", {
-        ascending: true,
-      });
-
-    if (itemsError) {
-      console.error(itemsError);
-
-      return NextResponse.json(
-        {
-          error:
-            "Unable to load order items.",
-        },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      order,
-      items: items ?? [],
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
     console.error(error);
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load order details.",
+        error: "Unable to load order details.",
       },
       { status: 500 }
     );

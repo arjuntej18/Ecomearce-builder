@@ -6,7 +6,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 type Category = {
   id: string;
@@ -129,8 +128,7 @@ function BackIcon() {
   );
 }
 export default function StorefrontHeader() {
-  const supabase =
-    createSupabaseBrowserClient();
+
 
   const [categories, setCategories] =
     useState<Category[]>([]);
@@ -161,28 +159,47 @@ export default function StorefrontHeader() {
   const pathname = usePathname();
 
   useEffect(() => {
-    async function loadCategories() {
-      const { data, error } =
-        await supabase
-          .from("categories")
-          .select("id, name, slug")
-          .order("name", {
-            ascending: true,
-          });
+  async function loadCategories() {
+    try {
+      const response = await fetch("/api/products", {
+        cache: "no-store",
+      });
 
-      if (error) {
-        console.error(
-          "Category loading error:",
-          error
-        );
-        return;
+      if (!response.ok) {
+        throw new Error("Failed to load categories");
       }
 
-      setCategories(data ?? []);
-    }
+      const data = await response.json();
 
-    loadCategories();
-  }, []);
+      const categoryMap = new Map<string, Category>();
+
+      for (const product of data.products ?? []) {
+        if (product.category) {
+          categoryMap.set(
+            product.category.id,
+            product.category
+          );
+        }
+      }
+
+      const loadedCategories = Array.from(
+        categoryMap.values()
+      ).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      setCategories(loadedCategories);
+    } catch (error) {
+      console.error(
+        "Category loading error:",
+        error
+      );
+      setCategories([]);
+    }
+  }
+
+  loadCategories();
+}, []);
 
   useEffect(() => {
     function handleScroll() {
@@ -236,77 +253,75 @@ export default function StorefrontHeader() {
   }, [searchOpen]);
 
   useEffect(() => {
-    const term =
-      searchTerm.trim();
+  const term = searchTerm.trim();
 
-    if (!searchOpen || term.length < 2) {
+  if (!searchOpen || term.length < 2) {
+    setSearchProducts([]);
+    setSearchCategories([]);
+    setSearching(false);
+    return;
+  }
+
+  const timeout = window.setTimeout(async () => {
+    setSearching(true);
+
+    try {
+      const response = await fetch("/api/products", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to search products");
+      }
+
+      const data = await response.json();
+      const products = data.products ?? [];
+
+      const matchedProducts: SearchProduct[] =
+        products
+          .filter((product: SearchProduct) =>
+            product.name
+              .toLowerCase()
+              .includes(term.toLowerCase())
+          )
+          .slice(0, 6);
+
+      const categoryMap = new Map<string, Category>();
+
+      products.forEach((product: any) => {
+        if (product.category) {
+          categoryMap.set(
+            product.category.id,
+            product.category
+          );
+        }
+      });
+
+      const matchedCategories = Array.from(
+        categoryMap.values()
+      )
+        .filter((category) =>
+          category.name
+            .toLowerCase()
+            .includes(term.toLowerCase())
+        )
+        .slice(0, 5);
+
+      setSearchProducts(matchedProducts);
+      setSearchCategories(matchedCategories);
+    } catch (error) {
+      console.error("Search error:", error);
       setSearchProducts([]);
       setSearchCategories([]);
+    } finally {
       setSearching(false);
-      return;
     }
+  }, 250);
 
-    const timeout =
-      window.setTimeout(
-        async () => {
-          setSearching(true);
-
-          const [
-            productsResult,
-            categoriesResult,
-          ] = await Promise.all([
-            supabase
-              .from("products")
-              .select(
-                "id, name, slug"
-              )
-              .eq(
-                "is_active",
-                true
-              )
-              .ilike(
-                "name",
-                `%${term}%`
-              )
-              .limit(6),
-
-            supabase
-              .from("categories")
-              .select(
-                "id, name, slug"
-              )
-              .ilike(
-                "name",
-                `%${term}%`
-              )
-              .limit(5),
-          ]);
-
-          setSearchProducts(
-            productsResult.data ??
-              []
-          );
-
-          setSearchCategories(
-            categoriesResult.data ??
-              []
-          );
-
-          setSearching(false);
-        },
-        250
-      );
-
-    return () => {
-      window.clearTimeout(
-        timeout
-      );
-    };
-  }, [
-    searchTerm,
-    searchOpen,
-    supabase,
-  ]);
+  return () => {
+    window.clearTimeout(timeout);
+  };
+}, [searchTerm, searchOpen]);
 
   function closeAll() {
     setMenuOpen(false);

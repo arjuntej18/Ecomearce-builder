@@ -1,171 +1,89 @@
-// Guest cart API using the server-side Supabase secret.
-
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SECRET_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const sessionId = url.searchParams.get("sessionId");
+  try {
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId");
 
-  if (!sessionId) {
-    return NextResponse.json(
-      { error: "sessionId is required" },
-      { status: 400 }
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "sessionId is required" },
+        { status: 400 }
+      );
+    }
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/cart?sessionId=${encodeURIComponent(sessionId)}`,
+      { cache: "no-store" }
     );
-  }
 
-  const { data, error } = await supabase
-    .from("carts")
-    .select(`
-      id,
-      session_id,
-      cart_items (
-        id,
-        quantity,
-        variant_id,
-        product_variants (
-          id,
-          sku,
-          size,
-          color,
-          price,
-          image_url,
-          products (
-            id,
-            name,
-            slug,
-            main_image_url
-          )
-        )
-      )
-    `)
-    .eq("session_id", sessionId)
-    .maybeSingle();
+    const data = await response.json();
 
-  if (error) {
-    console.error(error);
+    return NextResponse.json(data, {
+      status: response.status,
+    });
+  } catch (error) {
+    console.error("Cart GET proxy error:", error);
+
     return NextResponse.json(
       { error: "Failed to load cart" },
       { status: 500 }
     );
   }
-
-  return NextResponse.json(data ?? null);
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const { sessionId, variantId, quantity = 1 } = body;
+    const response = await fetch(`${BACKEND_URL}/api/cart`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-    if (!sessionId || !variantId) {
-      return NextResponse.json(
-        { error: "sessionId and variantId are required" },
-        { status: 400 }
-      );
-    }
+    const data = await response.json();
 
-    const { data: cart, error: cartError } = await supabase
-      .from("carts")
-      .upsert(
-        { session_id: sessionId },
-        { onConflict: "session_id" }
-      )
-      .select("id")
-      .single();
+    return NextResponse.json(data, {
+      status: response.status,
+    });
+  } catch (error) {
+    console.error("Cart POST proxy error:", error);
 
-    if (cartError || !cart) {
-      console.error(cartError);
-      return NextResponse.json(
-        { error: "Failed to create cart" },
-        { status: 500 }
-      );
-    }
-
-    const { error: itemError } = await supabase
-      .from("cart_items")
-      .upsert(
-        {
-          cart_id: cart.id,
-          variant_id: variantId,
-          quantity,
-        },
-        { onConflict: "cart_id,variant_id" }
-      );
-
-    if (itemError) {
-      console.error(itemError);
-      return NextResponse.json(
-        { error: "Failed to add item" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch {
     return NextResponse.json(
-      { error: "Invalid request" },
-      { status: 400 }
+      { error: "Failed to add item" },
+      { status: 500 }
     );
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    const { sessionId } = await request.json();
+    const body = await request.json();
 
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "sessionId is required." },
-        { status: 400 }
-      );
-    }
+    const response = await fetch(`${BACKEND_URL}/api/cart/item`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-    const { data: cart, error: cartError } = await supabase
-      .from("carts")
-      .select("id")
-      .eq("session_id", sessionId)
-      .maybeSingle();
+    const data = await response.json();
 
-    if (cartError) {
-      console.error(cartError);
-      return NextResponse.json(
-        { error: "Unable to find cart." },
-        { status: 500 }
-      );
-    }
-
-    if (!cart) {
-      return NextResponse.json({ success: true });
-    }
-
-    const { error: deleteError } = await supabase
-      .from("carts")
-      .delete()
-      .eq("id", cart.id);
-
-    if (deleteError) {
-      console.error(deleteError);
-      return NextResponse.json(
-        { error: "Unable to clear cart." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Cart item DELETE proxy error:", error);
 
     return NextResponse.json(
-      { error: "Unable to clear cart." },
+      { error: "Unable to remove cart item" },
       { status: 500 }
     );
   }

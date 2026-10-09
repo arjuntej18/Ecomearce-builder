@@ -1,13 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { useEffect, useMemo, useState } from "react";
 
 type Category = {
   id: string;
@@ -19,31 +12,44 @@ type Product = {
   id: string;
   name: string;
   slug: string;
-  category_id: string | null;
-  brand: string | null;
   description: string | null;
+  brand: string | null;
+  category_id: string | null;
+  category_name: string | null;
+
+  base_price: number | null;
+  selling_price: number | null;
+  discounted_price: number | null;
+
   main_image_url: string | null;
-  base_price: number;
-  sale_price: number | null;
-  is_featured: boolean;
+
   is_active: boolean;
+  is_featured: boolean;
 };
 
 type Variant = {
   id: string;
   product_id: string;
-  sku: string;
-  size: string | null;
-  color: string | null;
   price: number | null;
   original_price: number | null;
   discount_percent: number | null;
+  size: string | null;
+  color: string | null;
+  sku: string;
   is_active: boolean;
 };
 
 type Inventory = {
+  id: string;
   variant_id: string;
   quantity: number | null;
+};
+
+type ProductImage = {
+  id: string;
+  product_id: string;
+  image_url: string;
+  sort_order: number;
 };
 
 type EditVariant = {
@@ -51,27 +57,44 @@ type EditVariant = {
   sku: string;
   size: string;
   color: string;
-  price: string;
+  is_active: boolean;
+  stock: string;
 };
 
 type EditForm = {
   name: string;
-  category_id: string;
-  description: string;
   brand: string;
+  description: string;
+  category_id: string;
+
   base_price: string;
-  sale_price: string;
-  main_image_url: string;
-  is_featured: boolean;
+  selling_price: string;
+  discounted_price: string;
+
   is_active: boolean;
+  is_featured: boolean;
 };
+
+function money(value: number | null | undefined) {
+  if (
+    value == null ||
+    !Number.isFinite(Number(value))
+  ) {
+    return "₹0.00";
+  }
+
+  return `₹${Number(value).toLocaleString(
+    "en-IN",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }
+  )}`;
+}
 
 export default function ShopPreviewPage() {
   const [products, setProducts] =
     useState<Product[]>([]);
-
-  const [categories, setCategories] =
-    useState<Category[]>([]);
 
   const [variants, setVariants] =
     useState<Variant[]>([]);
@@ -79,16 +102,33 @@ export default function ShopPreviewPage() {
   const [inventory, setInventory] =
     useState<Inventory[]>([]);
 
+  const [categories, setCategories] =
+    useState<Category[]>([]);
+
+  const [images, setImages] =
+    useState<ProductImage[]>([]);
+
   const [loading, setLoading] =
     useState(true);
+
+  const [saving, setSaving] =
+    useState(false);
 
   const [error, setError] =
     useState("");
 
-  const [editingId, setEditingId] =
-    useState<string | null>(null);
+  const [message, setMessage] =
+    useState("");
 
-  const [savingId, setSavingId] =
+  const [search, setSearch] =
+    useState("");
+
+  const [filter, setFilter] =
+    useState<
+      "all" | "active" | "inactive"
+    >("all");
+
+  const [editingId, setEditingId] =
     useState<string | null>(null);
 
   const [editForm, setEditForm] =
@@ -96,183 +136,81 @@ export default function ShopPreviewPage() {
 
   const [editVariants, setEditVariants] =
     useState<EditVariant[]>([]);
-  const [discountId, setDiscountId] =
-  useState<string | null>(null);
 
-const [discountPercent, setDiscountPercent] =
-  useState("");
+  const [discountEnabled, setDiscountEnabled] = useState(false);
 
-const [savingDiscountId, setSavingDiscountId] =
-  useState<string | null>(null);
+
+  /*
+   * -----------------------------
+   * LOAD SHOP DATA
+   * -----------------------------
+   */
+
   async function loadShop() {
     setLoading(true);
     setError("");
 
     try {
-      const [
-        productsResult,
-        categoriesResult,
-      ] = await Promise.all([
-        supabase
-          .from("products")
-          .select(
-            `
-            id,
-            name,
-            slug,
-            category_id,
-            brand,
-            description,
-            main_image_url,
-            base_price,
-            sale_price,
-            is_featured,
-            is_active
-            `
-          )
-          .eq("is_active", true)
-          .order("created_at", {
-            ascending: false,
-          }),
+      const response = await fetch(
+        "/api/admin/products",
+        {
+          cache: "no-store",
+        }
+      );
 
-        supabase
-          .from("categories")
-          .select(
-            "id, name, slug"
-          )
-          .order("name", {
-            ascending: true,
-          }),
-      ]);
+      const result =
+        await response.json();
 
-      if (productsResult.error) {
-        console.error(
-          productsResult.error
+      if (!response.ok) {
+        throw new Error(
+          result?.error ||
+            "Unable to load products."
         );
-
-        setError(
-          "Unable to load products."
-        );
-
-        return;
       }
 
-      const loadedProducts =
-        (productsResult.data ??
-          []) as Product[];
-
-      const loadedCategories =
-        (categoriesResult.data ??
-          []) as Category[];
-
       setProducts(
-        loadedProducts
+        Array.isArray(result.products)
+          ? result.products
+          : []
+      );
+
+      setVariants(
+        Array.isArray(result.variants)
+          ? result.variants
+          : []
+      );
+
+      setInventory(
+        Array.isArray(result.inventory)
+          ? result.inventory
+          : []
+      );
+
+      setImages(
+        Array.isArray(result.images)
+          ? result.images
+          : []
       );
 
       setCategories(
-        loadedCategories
+        Array.isArray(result.categories)
+          ? result.categories
+          : []
       );
+      return result;
+    } catch (err) {
+      console.error(err);
 
-      if (!loadedProducts.length) {
-        setVariants([]);
-        setInventory([]);
-        return;
-      }
-
-      const productIds =
-        loadedProducts.map(
-          (product) =>
-            product.id
-        );
-
-      const {
-        data: variantData,
-        error: variantError,
-      } = await supabase
-        .from("product_variants")
-        .select(
-  `
-  id,
-  product_id,
-  sku,
-  size,
-  color,
-  price,
-  original_price,
-  discount_percent,
-  is_active
-  `
-)
-        .in(
-          "product_id",
-          productIds
-        )
-        .eq(
-          "is_active",
-          true
-        );
-
-      if (variantError) {
-        console.error(
-          variantError
-        );
-
-        setError(
-          "Unable to load product options."
-        );
-
-        return;
-      }
-
-      const loadedVariants =
-        (variantData ??
-          []) as Variant[];
-
-      setVariants(
-        loadedVariants
-      );
-
-      if (!loadedVariants.length) {
-        setInventory([]);
-        return;
-      }
-
-      const variantIds =
-        loadedVariants.map(
-          (variant) =>
-            variant.id
-        );
-
-      const {
-        data: inventoryData,
-        error: inventoryError,
-      } = await supabase
-        .from("inventory")
-        .select(
-          "variant_id, quantity"
-        )
-        .in(
-          "variant_id",
-          variantIds
-        );
-
-      if (inventoryError) {
-        console.error(
-          inventoryError
-        );
-
-        setInventory([]);
-      } else {
-        setInventory(
-          (inventoryData ??
-            []) as Inventory[]
-        );
-      }
-    } catch (error) {
-      console.error(error);
+      setProducts([]);
+      setVariants([]);
+      setInventory([]);
+      setImages([]);
+      setCategories([]);
 
       setError(
-        "Unable to load shop preview."
+        err instanceof Error
+          ? err.message
+          : "Unable to load shop preview."
       );
     } finally {
       setLoading(false);
@@ -282,6 +220,12 @@ const [savingDiscountId, setSavingDiscountId] =
   useEffect(() => {
     loadShop();
   }, []);
+
+  /*
+   * -----------------------------
+   * PRODUCT HELPERS
+   * -----------------------------
+   */
 
   function getProductVariants(
     productId: string
@@ -293,58 +237,28 @@ const [savingDiscountId, setSavingDiscountId] =
     );
   }
 
-  function getProductPrice(
-    product: Product
+  function getProductImages(
+    productId: string
   ) {
-    const productVariants =
-      getProductVariants(
-        product.id
+    return images
+      .filter(
+        (image) =>
+          image.product_id ===
+          productId
+      )
+      .sort(
+        (a, b) =>
+          a.sort_order -
+          b.sort_order
       );
-
-    const prices =
-      productVariants
-        .map((variant) =>
-          Number(
-            variant.price
-          )
-        )
-        .filter(
-          (price) =>
-            Number.isFinite(
-              price
-            ) &&
-            price > 0
-        );
-
-    if (prices.length) {
-      return Math.min(
-        ...prices
-      );
-    }
-
-    if (
-      product.sale_price !=
-      null
-    ) {
-      return Number(
-        product.sale_price
-      );
-    }
-
-    return Number(
-      product.base_price
-    );
   }
 
   function getProductStock(
     productId: string
   ) {
     const variantIds =
-      getProductVariants(
-        productId
-      ).map(
-        (variant) =>
-          variant.id
+      getProductVariants(productId).map(
+        (variant) => variant.id
       );
 
     return inventory
@@ -356,375 +270,2040 @@ const [savingDiscountId, setSavingDiscountId] =
       .reduce(
         (total, item) =>
           total +
-          Number(
-            item.quantity ?? 0
-          ),
+          Number(item.quantity ?? 0),
         0
       );
+  }
+
+  function getProductDiscount(
+    product: Product
+  ) {
+    if (
+      product.discounted_price ==
+        null ||
+      product.base_price == null ||
+      Number(product.base_price) <= 0
+    ) {
+      return null;
+    }
+
+    const discount =
+      ((Number(product.base_price) -
+        Number(
+          product.discounted_price
+        )) /
+        Number(product.base_price)) *
+      100;
+
+    return Math.round(discount);
+  }
+
+  function getCustomerPrice(
+    product: Product
+  ) {
+    if (
+      product.discounted_price !=
+      null
+    ) {
+      return Number(
+        product.discounted_price
+      );
+    }
+
+    if (
+      product.selling_price !=
+      null
+    ) {
+      return Number(
+        product.selling_price
+      );
+    }
+
+    return Number(
+      product.base_price ?? 0
+    );
   }
 
   function getAvailability(
     productId: string
   ) {
     const stock =
-      getProductStock(
-        productId
-      );
+      getProductStock(productId);
 
     if (stock <= 0) {
-      return "Out of Stock";
+      return {
+        label: "Out of Stock",
+        className: "out",
+      };
     }
 
     if (stock <= 5) {
-      return "Only a few left";
+      return {
+        label: "Only a few left",
+        className: "low",
+      };
     }
 
-    return "In Stock";
+    return {
+      label: "In Stock",
+      className: "in",
+    };
   }
 
-  function startEditing(
-    product: Product
-  ) {
+  /*
+   * -----------------------------
+   * EDITOR
+   * -----------------------------
+   */
+
+  function openEditor(
+  product: Product,
+  sourceVariants: Variant[] = variants,
+  sourceInventory: Inventory[] = inventory
+) {
     setEditingId(product.id);
+    setDiscountEnabled(
+  product.discounted_price != null
+);
 
     setEditForm({
-      name: product.name,
-      category_id:
-        product.category_id ??
-        "",
+      name: product.name ?? "",
+      brand: product.brand ?? "",
       description:
-        product.description ??
-        "",
-      brand:
-        product.brand ??
-        "",
+        product.description ?? "",
+      category_id:
+        product.category_id ?? "",
+
       base_price:
-        String(
-          product.base_price
-        ),
-      sale_price:
-        product.sale_price ==
+        product.base_price != null
+          ? String(product.base_price)
+          : "",
+
+      selling_price:
+        product.selling_price != null
+          ? String(
+              product.selling_price
+            )
+          : product.base_price != null
+          ? String(product.base_price)
+          : "",
+
+      discounted_price:
+        product.discounted_price !=
         null
-          ? ""
-          : String(
-              product.sale_price
-            ),
-      main_image_url:
-        product.main_image_url ??
-        "",
-      is_featured:
-        Boolean(
-          product.is_featured
-        ),
+          ? String(
+              product.discounted_price
+            )
+          : "",
+
       is_active:
-        Boolean(
-          product.is_active
-        ),
+        Boolean(product.is_active),
+
+      is_featured:
+        Boolean(product.is_featured),
     });
 
     const productVariants =
-      getProductVariants(
-        product.id
-      );
+  sourceVariants.filter(
+    (variant) =>
+      variant.product_id === product.id
+  );
 
     setEditVariants(
       productVariants.map(
         (variant) => ({
           id: variant.id,
-          sku: variant.sku,
-          size:
-            variant.size ??
-            "",
-          color:
-            variant.color ??
-            "",
-          price:
-            variant.price ==
-            null
-              ? ""
-              : String(
-                  variant.price
-                ),
+          sku: variant.sku ?? "",
+          size: variant.size ?? "",
+          color: variant.color ?? "",
+          is_active:
+            Boolean(variant.is_active),
+
+          stock: String(
+            sourceInventory.find(
+              (item) =>
+                item.variant_id ===
+                variant.id
+            )?.quantity ?? 0
+          ),
         })
       )
     );
 
     setError("");
+    setMessage("");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
-  function cancelEditing() {
+  function closeEditor() {
     setEditingId(null);
     setEditForm(null);
     setEditVariants([]);
     setError("");
+    setMessage("");
   }
 
-  function updateEditVariantPrice(
-    variantId: string,
-    value: string
-  ) {
-    setEditVariants(
-      (current) =>
-        current.map(
-          (variant) =>
-            variant.id ===
-            variantId
-              ? {
-                  ...variant,
-                  price: value,
-                }
-              : variant
-        )
-    );
+  /*
+   * -----------------------------
+   * DISCOUNT
+   * -----------------------------
+   */
+
+  function hasDiscount() {
+  return discountEnabled;
+}
+
+function enableDiscount() {
+  setDiscountEnabled(true);
+  setError("");
+  setMessage("");
+}
+
+function removeDiscount() {
+  if (!editForm) {
+    return;
   }
 
-  async function saveProduct(
-    productId: string
+  setDiscountEnabled(false);
+
+  setEditForm({
+    ...editForm,
+    discounted_price: "",
+  });
+
+  setError("");
+  setMessage("");
+}
+
+  function getLiveDiscount() {
+  if (!editForm) {
+    return null;
+  }
+
+  if (editForm.discounted_price.trim() === "") {
+    return null;
+  }
+
+  const base = Number(editForm.base_price);
+  const discounted = Number(editForm.discounted_price);
+
+  if (
+    !Number.isFinite(base) ||
+    base <= 0 ||
+    !Number.isFinite(discounted) ||
+    discounted < 0 ||
+    discounted >= base
   ) {
+    return null;
+  }
+
+  return Math.round(
+    ((base - discounted) / base) * 100
+  );
+}
+
+  function getLiveCustomerPrice() {
     if (!editForm) {
-      return;
+      return 0;
     }
 
-    const basePrice = Number(
-      editForm.base_price
-    );
-
     if (
-      !Number.isFinite(
-        basePrice
-      ) ||
-      basePrice <= 0
-    ) {
-      setError(
-        "Base price must be greater than zero."
-      );
-
-      return;
-    }
-
-    let salePrice:
-      | number
-      | null = null;
-
-    if (
-      editForm.sale_price.trim() !==
+      editForm.discounted_price.trim() !==
       ""
     ) {
-      salePrice = Number(
-        editForm.sale_price
+      return Number(
+        editForm.discounted_price
       );
-
-      if (
-        !Number.isFinite(
-          salePrice
-        ) ||
-        salePrice < 0
-      ) {
-        setError(
-          "Sale price is invalid."
-        );
-
-        return;
-      }
     }
 
-    const variantUpdates =
-      editVariants.map(
-        (variant) => ({
-          id: variant.id,
-          price: Number(
-            variant.price
-          ),
-        })
-      );
+    return Number(
+      editForm.selling_price
+    );
+  }
 
-    for (const variant of
-      variantUpdates) {
-      if (
-        !Number.isFinite(
-          variant.price
-        ) ||
-        variant.price <= 0
-      ) {
-        setError(
-          "Every variant price must be greater than zero."
-        );
+  /*
+   * -----------------------------
+   * VARIANTS
+   * -----------------------------
+   */
 
-        return;
-      }
+  function updateVariant(
+    variantId: string,
+    field: keyof EditVariant,
+    value: string | boolean
+  ) {
+    setEditVariants((current) =>
+      current.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              [field]: value,
+            }
+          : variant
+      )
+    );
+  }
+
+  function addVariant() {
+    setEditVariants((current) => [
+      ...current,
+      {
+        id: "",
+        sku: "",
+        size: "",
+        color: "",
+        is_active: true,
+        stock: "0",
+      },
+    ]);
+  }
+
+  function removeNewVariant(
+    index: number
+  ) {
+    setEditVariants((current) =>
+      current.filter(
+        (_, currentIndex) =>
+          currentIndex !== index
+      )
+    );
+  }
+
+  /*
+   * -----------------------------
+   * SAVE PRODUCT
+   * -----------------------------
+   */
+
+  async function saveProduct() {
+    if (!editingId || !editForm) {
+      return;
     }
 
-    setSavingId(productId);
+    setSaving(true);
     setError("");
+    setMessage("");
 
     try {
-      const existingProduct =
-        products.find(
-          (product) =>
-            product.id ===
-            productId
-        );
+      const basePrice = Number(
+        editForm.base_price
+      );
 
-      if (!existingProduct) {
+      const sellingPrice = Number(
+        editForm.selling_price
+      );
+
+      const discountedPrice =
+        editForm.discounted_price.trim() ===
+        ""
+          ? null
+          : Number(
+              editForm.discounted_price
+            );
+
+      /*
+       * BASE PRICE
+       */
+
+      if (
+        !Number.isFinite(basePrice) ||
+        basePrice < 0
+      ) {
         setError(
-          "Product not found."
+          "Base Price is invalid."
         );
-
         return;
       }
 
-      const response =
-        await fetch(
-          `/api/admin/products/${productId}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              name:
-                editForm.name,
-              slug:
-                existingProduct.slug,
-              description:
-                editForm.description,
-              brand:
-                editForm.brand,
-              base_price:
-                basePrice,
-              sale_price:
-                salePrice,
-              category_id:
-                editForm.category_id ||
-                null,
-              main_image_url:
-                editForm.main_image_url,
-              is_featured:
-                editForm.is_featured,
-              is_active:
-                editForm.is_active,
-              variants:
-                variantUpdates,
-            }),
-          }
+      /*
+       * SELLING PRICE
+       */
+
+      if (
+        !Number.isFinite(sellingPrice) ||
+        sellingPrice < 0
+      ) {
+        setError(
+          "Selling Price is invalid."
         );
+        return;
+      }
+
+      /*
+       * DISCOUNTED PRICE
+       */
+
+      if (
+        discountedPrice !== null &&
+        (!Number.isFinite(
+          discountedPrice
+        ) ||
+          discountedPrice < 0 ||
+          discountedPrice >=
+            basePrice)
+      ) {
+        setError(
+          "Discounted Price must be lower than Base Price."
+        );
+        return;
+      }
+
+      /*
+       * VARIANTS
+       */
+
+      const variantsPayload =
+        editVariants
+          .filter(
+            (variant) =>
+              Boolean(variant.id)
+          )
+          .map((variant) => ({
+            id: variant.id,
+
+            sku: variant.sku.trim(),
+
+            size:
+              variant.size.trim() ||
+              null,
+
+            color:
+              variant.color.trim() ||
+              null,
+
+            is_active:
+              variant.is_active,
+          }));
+
+      /*
+       * INVENTORY
+       */
+
+      const inventoryPayload =
+        editVariants
+          .filter(
+            (variant) =>
+              Boolean(variant.id)
+          )
+          .map((variant) => ({
+            variant_id: variant.id,
+
+            quantity: Math.max(
+              0,
+              Number(
+                variant.stock
+              ) || 0
+            ),
+          }));
+
+      /*
+       * PATCH
+       */
+
+      const response = await fetch(
+        `/api/admin/products/${editingId}`,
+        {
+          method: "PATCH",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            name:
+              editForm.name.trim(),
+
+            description:
+              editForm.description.trim() ||
+              null,
+
+            brand:
+              editForm.brand.trim() ||
+              null,
+
+            category_id:
+              editForm.category_id ||
+              null,
+
+            base_price:
+              basePrice,
+
+            selling_price:
+              sellingPrice,
+
+            discounted_price:
+              discountedPrice,
+
+            is_active:
+              editForm.is_active,
+
+            is_featured:
+              editForm.is_featured,
+
+            variants:
+              variantsPayload,
+
+            inventory:
+              inventoryPayload,
+          }),
+        }
+      );
 
       const result =
         await response.json();
 
       if (!response.ok) {
-        setError(
-          result.error ||
+        throw new Error(
+          result?.error ||
             "Unable to save product."
         );
-
-        return;
       }
 
-      setProducts(
-        (current) =>
-          current.map(
-            (product) =>
-              product.id ===
-              productId
-                ? {
-                    ...product,
-                    ...result.product,
-                  }
-                : product
-          )
+      setMessage(
+        discountedPrice !== null
+          ? "Product saved with discount."
+          : "Product saved without discount."
       );
 
-      if (
-        Array.isArray(
-          result.variants
-        )
-      ) {
-        setVariants(
-          (current) =>
-            current.map(
-              (variant) => {
-                const updated =
-                  result.variants.find(
-                    (
-                      item: Variant
-                    ) =>
-                      item.id ===
-                      variant.id
-                  );
+      const refreshed = await loadShop();
 
-                return updated
-                  ? {
-                      ...variant,
-                      ...updated,
-                    }
-                  : variant;
-              }
-            )
-        );
-      }
+const updatedProduct =
+  Array.isArray(refreshed?.products)
+    ? refreshed.products.find(
+        (product: Product) =>
+          product.id === editingId
+      )
+    : null;
 
-      setEditingId(null);
-      setEditForm(null);
-      setEditVariants([]);
-    } catch (error) {
-      console.error(error);
+if (updatedProduct) {
+  openEditor(
+    updatedProduct,
+    Array.isArray(refreshed?.variants)
+      ? refreshed.variants
+      : [],
+    Array.isArray(refreshed?.inventory)
+      ? refreshed.inventory
+      : []
+  );
+}
+    } catch (err) {
+      console.error(err);
 
       setError(
-        "Unable to save product."
+        err instanceof Error
+          ? err.message
+          : "Unable to save product."
       );
     } finally {
-      setSavingId(null);
+      setSaving(false);
     }
   }
 
+  /*
+   * -----------------------------
+   * FILTERING
+   * -----------------------------
+   */
+
+  const filteredProducts =
+    useMemo(() => {
+      const query =
+        search.trim().toLowerCase();
+
+      return products.filter(
+        (product) => {
+          const matchesSearch =
+            !query ||
+            product.name
+              .toLowerCase()
+              .includes(query) ||
+            product.slug
+              .toLowerCase()
+              .includes(query) ||
+            (product.brand ?? "")
+              .toLowerCase()
+              .includes(query);
+
+          const matchesFilter =
+            filter === "all" ||
+            (filter === "active" &&
+              product.is_active) ||
+            (filter === "inactive" &&
+              !product.is_active);
+
+          return (
+            matchesSearch &&
+            matchesFilter
+          );
+        }
+      );
+    }, [
+      products,
+      search,
+      filter,
+    ]);
+
+  /*
+   * -----------------------------
+   * UI
+   * -----------------------------
+   */
+
   return (
-    <main className="min-h-screen bg-white text-gray-900">
-      <div className="mx-auto max-w-7xl p-6">
-        {/* Header */}
-        <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+    <main className="shop-page">
+      <style jsx>{`
+        .shop-page {
+          min-height: 100vh;
+          background: #050807;
+          color: #f4f7f5;
+          padding: 32px;
+        }
+
+        .shell {
+          max-width: 1500px;
+          margin: 0 auto;
+        }
+
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          gap: 24px;
+          margin-bottom: 28px;
+        }
+
+        .eyebrow {
+          color: #63d99b;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 34px;
+          letter-spacing: -0.04em;
+        }
+
+        .sub {
+          margin-top: 8px;
+          color: #89948e;
+          font-size: 14px;
+        }
+
+        .toolbar {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+
+        input,
+        textarea,
+        select {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid #202a25;
+          background: #0b100e;
+          color: #f4f7f5;
+          border-radius: 14px;
+          outline: none;
+          padding: 12px 14px;
+          font: inherit;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+          border-color: #3c8e68;
+          box-shadow:
+            0 0 0 3px
+            rgba(
+              76,
+              207,
+              141,
+              0.08
+            );
+        }
+
+        textarea {
+          min-height: 110px;
+          resize: vertical;
+        }
+
+        .search {
+          max-width: 420px;
+        }
+
+        .filter {
+          width: auto;
+          min-width: 130px;
+        }
+
+        .editor {
+          background: #090d0b;
+          border: 1px solid #1d2822;
+          border-radius: 28px;
+          padding: 28px;
+          margin-bottom: 28px;
+          box-shadow:
+            0 20px 70px
+            rgba(0, 0, 0, 0.25);
+        }
+
+        .editor-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 20px;
+          margin-bottom: 28px;
+        }
+
+        .editor-title {
+          font-size: 24px;
+          font-weight: 700;
+        }
+
+        .editor-sub {
+          margin-top: 6px;
+          color: #7f8c85;
+          font-size: 13px;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              2,
+              minmax(0, 1fr)
+            );
+          gap: 18px;
+        }
+
+        .full {
+          grid-column: 1 / -1;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .label {
+          color: #aeb8b3;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        /*
+         * PRICING
+         */
+
+        .pricing {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              3,
+              minmax(0, 1fr)
+            );
+          gap: 14px;
+          margin-top: 24px;
+        }
+
+        .price-box {
+          border: 1px solid #202a25;
+          background: #0b100e;
+          border-radius: 20px;
+          padding: 18px;
+        }
+
+        .price-box.discount-active {
+          border-color: #376f52;
+          background:
+            linear-gradient(
+              145deg,
+              #0d1712,
+              #0a100d
+            );
+        }
+
+        .price-label {
+          color: #8c9892;
+          font-size: 12px;
+          margin-bottom: 9px;
+        }
+
+        .price-description {
+          color: #5f6b65;
+          font-size: 11px;
+          margin-top: 7px;
+          line-height: 1.4;
+        }
+
+        .discount-control {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          min-height: 46px;
+        }
+
+        .discount-status {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .discount-status strong {
+          font-size: 14px;
+          color: #dce7e1;
+        }
+
+        .discount-status span {
+          font-size: 11px;
+          color: #68756e;
+        }
+
+        .discount-badge {
+          display: inline-flex;
+          width: fit-content;
+          margin-top: 10px;
+          padding: 5px 9px;
+          border-radius: 999px;
+          background:
+            rgba(
+              65,
+              190,
+              123,
+              0.12
+            );
+          color: #6ee0a3;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .live-preview {
+          margin-top: 18px;
+          padding: 16px 18px;
+          border: 1px solid #1f2b25;
+          background: #080c0a;
+          border-radius: 18px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .live-preview-label {
+          color: #77847d;
+          font-size: 12px;
+        }
+
+        .live-price {
+          display: flex;
+          align-items: baseline;
+          gap: 9px;
+        }
+
+        .live-price strong {
+          font-size: 24px;
+        }
+
+        .live-old {
+          color: #606c65;
+          text-decoration: line-through;
+          font-size: 12px;
+        }
+
+        .variants {
+          margin-top: 28px;
+        }
+
+        .section-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 14px;
+        }
+
+        .section-title {
+          font-size: 16px;
+          font-weight: 750;
+        }
+
+        .variant-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .variant {
+          border: 1px solid #202a25;
+          background: #0b100e;
+          border-radius: 20px;
+          padding: 16px;
+        }
+
+        .variant-grid {
+          display: grid;
+          grid-template-columns:
+            1.4fr 1fr 1fr 1fr auto;
+          gap: 12px;
+          align-items: end;
+        }
+
+        .toggle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 44px;
+          color: #b9c2bd;
+          font-size: 13px;
+        }
+
+        .toggle input {
+          width: auto;
+        }
+
+        .actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 26px;
+          padding-top: 20px;
+          border-top: 1px solid #1c2521;
+        }
+
+        button {
+          border: 0;
+          border-radius: 14px;
+          padding: 11px 16px;
+          font: inherit;
+          font-weight: 700;
+          cursor: pointer;
+          transition:
+            transform 0.15s ease,
+            opacity 0.15s ease;
+        }
+
+        button:hover {
+          transform: translateY(-1px);
+        }
+
+        button:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
+          transform: none;
+        }
+
+        .primary {
+          background: #54d38d;
+          color: #06100a;
+        }
+
+        .secondary {
+          background: #121a16;
+          color: #dce5df;
+          border: 1px solid #26332c;
+        }
+
+        .danger {
+          background: #321414;
+          color: #ff8d8d;
+          border: 1px solid #542020;
+        }
+
+        .message {
+          margin-bottom: 18px;
+          padding: 13px 15px;
+          border-radius: 14px;
+          font-size: 13px;
+        }
+
+        .error {
+          background: #251111;
+          border: 1px solid #4b2222;
+          color: #ff9999;
+        }
+
+        .success {
+          background: #0d2117;
+          border: 1px solid #214d35;
+          color: #75dda2;
+        }
+
+        .products {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              3,
+              minmax(0, 1fr)
+            );
+          gap: 18px;
+        }
+
+        .card {
+          overflow: hidden;
+          background: #090d0b;
+          border: 1px solid #1d2822;
+          border-radius: 24px;
+          transition:
+            border-color 0.15s ease,
+            transform 0.15s ease;
+        }
+
+        .card:hover {
+          border-color: #30483b;
+          transform: translateY(-2px);
+        }
+
+        .image {
+          height: 260px;
+          background: #0e1411;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .image img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .no-image {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #59645e;
+          font-size: 13px;
+        }
+
+        .featured {
+          position: absolute;
+          top: 12px;
+          left: 12px;
+          background: #54d38d;
+          color: #06100a;
+          border-radius: 999px;
+          padding: 6px 9px;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .card-body {
+          padding: 18px;
+        }
+
+        .category {
+          color: #6edca0;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+
+        .name {
+          font-size: 17px;
+          font-weight: 750;
+          margin-top: 7px;
+        }
+
+        .brand {
+          color: #707c75;
+          font-size: 12px;
+          margin-top: 4px;
+        }
+
+        .card-price {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          margin-top: 16px;
+        }
+
+        .card-price-main {
+          font-size: 20px;
+          font-weight: 800;
+        }
+
+        .card-price-old {
+          color: #5e6963;
+          font-size: 12px;
+          text-decoration: line-through;
+        }
+
+        .stock-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 14px;
+          padding-top: 14px;
+          border-top: 1px solid #1b241f;
+        }
+
+        .stock {
+          font-size: 12px;
+        }
+
+        .stock.in {
+          color: #6edca0;
+        }
+
+        .stock.low {
+          color: #e8c66b;
+        }
+
+        .stock.out {
+          color: #ed7f7f;
+        }
+
+        .card-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 15px;
+        }
+
+        .card-actions button {
+          flex: 1;
+        }
+
+        .empty {
+          border: 1px dashed #26332c;
+          border-radius: 20px;
+          padding: 50px;
+          text-align: center;
+          color: #727e77;
+          grid-column: 1 / -1;
+        }
+
+        .images-preview {
+          margin-top: 28px;
+        }
+
+        .image-grid {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              5,
+              minmax(0, 1fr)
+            );
+          gap: 10px;
+        }
+
+        .image-thumb {
+          aspect-ratio: 1;
+          overflow: hidden;
+          border-radius: 14px;
+          background: #111713;
+          border: 1px solid #202a25;
+        }
+
+        .image-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .primary-image {
+          border-color: #54d38d;
+        }
+
+        @media (max-width: 1100px) {
+          .products {
+            grid-template-columns:
+              repeat(
+                2,
+                minmax(0, 1fr)
+              );
+          }
+
+          .variant-grid {
+            grid-template-columns:
+              repeat(
+                2,
+                minmax(0, 1fr)
+              );
+          }
+        }
+
+        @media (max-width: 760px) {
+          .shop-page {
+            padding: 18px;
+          }
+
+          .header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .grid,
+          .pricing,
+          .products {
+            grid-template-columns: 1fr;
+          }
+
+          .full {
+            grid-column: auto;
+          }
+
+          .image-grid {
+            grid-template-columns:
+              repeat(
+                3,
+                minmax(0, 1fr)
+              );
+          }
+
+          .live-preview {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+      `}</style>
+
+      <div className="shell">
+        <header className="header">
           <div>
-            <h1 className="text-3xl font-bold">
+            <div className="eyebrow">
+              Store Management
+            </div>
+
+            <h1>
               Shop Preview
             </h1>
 
-            <p className="mt-1 text-gray-500">
-              Preview the customer shop and edit products directly.
-            </p>
+            <div className="sub">
+              Manage products, pricing,
+              variants and inventory.
+            </div>
           </div>
-
-          <Link
-            href="http://localhost:3000/shop"
-            target="_blank"
-            className="rounded-lg border-2 border-green-600 bg-green-600 px-5 py-3 text-center font-semibold text-white hover:bg-green-700"
-          >
-            Open Storefront
-          </Link>
-        </div>
+        </header>
 
         {error && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div className="message error">
             {error}
           </div>
         )}
 
-        {loading ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-gray-500">
-            Loading shop...
+        {message && (
+          <div className="message success">
+            {message}
           </div>
-        ) : products.length ===
-          0 ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center text-gray-500">
-            No active products found.
+        )}
+
+        {editingId &&
+          editForm && (
+            <section className="editor">
+              <div className="editor-head">
+                <div>
+                  <div className="eyebrow">
+                    Product Editor
+                  </div>
+
+                  <div className="editor-title">
+                    {editForm.name ||
+                      "Edit Product"}
+                  </div>
+
+                  <div className="editor-sub">
+                    Changes are saved to the
+                    local PostgreSQL database.
+                  </div>
+                </div>
+
+                <button
+                  className="secondary"
+                  onClick={closeEditor}
+                  disabled={saving}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid">
+                <div className="field">
+                  <label className="label">
+                    Product Name
+                  </label>
+
+                  <input
+                    value={
+                      editForm.name
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        name:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="label">
+                    Brand
+                  </label>
+
+                  <input
+                    value={
+                      editForm.brand
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        brand:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="label">
+                    Category
+                  </label>
+
+                  <select
+                    value={
+                      editForm.category_id
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        category_id:
+                          event.target.value,
+                      })
+                    }
+                  >
+                    <option value="">
+                      No category
+                    </option>
+
+                    {categories.map(
+                      (category) => (
+                        <option
+                          key={category.id}
+                          value={category.id}
+                        >
+                          {category.name}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label className="label">
+                    Status
+                  </label>
+
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={
+                        editForm.is_active
+                      }
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          is_active:
+                            event.target
+                              .checked,
+                        })
+                      }
+                    />
+
+                    Active product
+                  </label>
+
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={
+                        editForm.is_featured
+                      }
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          is_featured:
+                            event.target
+                              .checked,
+                        })
+                      }
+                    />
+
+                    Featured product
+                  </label>
+                </div>
+
+                <div className="field full">
+                  <label className="label">
+                    Description
+                  </label>
+
+                  <textarea
+                    value={
+                      editForm.description
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        description:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/*
+               * -----------------------
+               * PRICING SECTION
+               * -----------------------
+               */}
+
+              <div className="pricing">
+                <div className="price-box">
+                  <div className="price-label">
+                    Base Price
+                  </div>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={
+                      editForm.base_price
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        base_price:
+                          event.target.value,
+                      })
+                    }
+                  />
+
+                  <div className="price-description">
+                    Reference / market price.
+                  </div>
+                </div>
+
+                <div className="price-box">
+                  <div className="price-label">
+                    Selling Price
+                  </div>
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={
+                      editForm.selling_price
+                    }
+                    onChange={(event) =>
+                      setEditForm({
+                        ...editForm,
+                        selling_price:
+                          event.target.value,
+                      })
+                    }
+                  />
+
+                  <div className="price-description">
+                    Normal customer price.
+                  </div>
+                </div>
+
+                <div
+                  className={`price-box ${
+                    hasDiscount()
+                      ? "discount-active"
+                      : ""
+                  }`}
+                >
+                  <div className="price-label">
+                    Discount
+                  </div>
+
+                  {!hasDiscount() ? (
+                    <div className="discount-control">
+                      <div className="discount-status">
+                        <strong>
+                          No discount
+                        </strong>
+
+                        <span>
+                          Selling price applies.
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={
+                          enableDiscount
+                        }
+                        disabled={saving}
+                      >
+                        Add Discount
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="discount-control">
+                        <div className="discount-status">
+                          <strong>
+                            Discount active
+                          </strong>
+
+                          <span>
+                            Enter the final offer
+                            price below.
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={
+                            removeDiscount
+                          }
+                          disabled={saving}
+                        >
+                          Remove Discount
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 14,
+                        }}
+                      >
+                        <label className="label">
+                          Discounted Price
+                        </label>
+
+                        <input
+                          style={{
+                            marginTop: 8,
+                          }}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="699"
+                          value={
+                            editForm.discounted_price
+                          }
+                          onChange={(event) =>
+                            setEditForm({
+                              ...editForm,
+                              discounted_price:
+                                event.target
+                                  .value,
+                            })
+                          }
+                        />
+
+                        {getLiveDiscount() !==
+                          null && (
+                          <span className="discount-badge">
+                            {getLiveDiscount()}%
+                            OFF
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="live-preview">
+                <div>
+                  <div className="live-preview-label">
+                    Customer pays
+                  </div>
+
+                  <div className="live-price">
+                    <strong>
+                      {money(
+                        getLiveCustomerPrice()
+                      )}
+                    </strong>
+
+                    {hasDiscount() &&
+                      editForm.base_price && (
+                        <span className="live-old">
+                          {money(
+                            Number(
+                              editForm.base_price
+                            )
+                          )}
+                        </span>
+                      )}
+                  </div>
+                </div>
+
+                {getLiveDiscount() !==
+                  null && (
+                  <span className="discount-badge">
+                    {getLiveDiscount()}%
+                    OFF
+                  </span>
+                )}
+              </div>
+
+              {/*
+               * -----------------------
+               * VARIANTS
+               * -----------------------
+               */}
+
+              <section className="variants">
+                <div className="section-head">
+                  <div className="section-title">
+                    Variants
+                  </div>
+
+                  <button
+                    className="secondary"
+                    onClick={addVariant}
+                    disabled={saving}
+                  >
+                    Add Variant
+                  </button>
+                </div>
+
+                <div className="variant-list">
+                  {editVariants.length ===
+                    0 && (
+                    <div className="empty">
+                      No variants found.
+                    </div>
+                  )}
+
+                  {editVariants.map(
+                    (
+                      variant,
+                      index
+                    ) => (
+                      <div
+                        className="variant"
+                        key={
+                          variant.id ||
+                          `new-${index}`
+                        }
+                      >
+                        <div className="variant-grid">
+                          <div className="field">
+                            <label className="label">
+                              SKU
+                            </label>
+
+                            <input
+                              value={
+                                variant.sku
+                              }
+                              onChange={(
+                                event
+                              ) => {
+                                if (
+                                  !variant.id
+                                ) {
+                                  setEditVariants(
+                                    (
+                                      current
+                                    ) =>
+                                      current.map(
+                                        (
+                                          item,
+                                          itemIndex
+                                        ) =>
+                                          itemIndex ===
+                                          index
+                                            ? {
+                                                ...item,
+                                                sku: event
+                                                  .target
+                                                  .value,
+                                              }
+                                            : item
+                                      )
+                                  );
+
+                                  return;
+                                }
+
+                                updateVariant(
+                                  variant.id,
+                                  "sku",
+                                  event.target
+                                    .value
+                                );
+                              }}
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label className="label">
+                              Size
+                            </label>
+
+                            <input
+                              value={
+                                variant.size
+                              }
+                              onChange={(
+                                event
+                              ) => {
+                                if (
+                                  !variant.id
+                                ) {
+                                  setEditVariants(
+                                    (
+                                      current
+                                    ) =>
+                                      current.map(
+                                        (
+                                          item,
+                                          itemIndex
+                                        ) =>
+                                          itemIndex ===
+                                          index
+                                            ? {
+                                                ...item,
+                                                size: event
+                                                  .target
+                                                  .value,
+                                              }
+                                            : item
+                                      )
+                                  );
+
+                                  return;
+                                }
+
+                                updateVariant(
+                                  variant.id,
+                                  "size",
+                                  event.target
+                                    .value
+                                );
+                              }}
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label className="label">
+                              Color
+                            </label>
+
+                            <input
+                              value={
+                                variant.color
+                              }
+                              onChange={(
+                                event
+                              ) => {
+                                if (
+                                  !variant.id
+                                ) {
+                                  setEditVariants(
+                                    (
+                                      current
+                                    ) =>
+                                      current.map(
+                                        (
+                                          item,
+                                          itemIndex
+                                        ) =>
+                                          itemIndex ===
+                                          index
+                                            ? {
+                                                ...item,
+                                                color: event
+                                                  .target
+                                                  .value,
+                                              }
+                                            : item
+                                      )
+                                  );
+
+                                  return;
+                                }
+
+                                updateVariant(
+                                  variant.id,
+                                  "color",
+                                  event.target
+                                    .value
+                                );
+                              }}
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label className="label">
+                              Stock
+                            </label>
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={
+                                variant.stock
+                              }
+                              onChange={(
+                                event
+                              ) => {
+                                if (
+                                  !variant.id
+                                ) {
+                                  setEditVariants(
+                                    (
+                                      current
+                                    ) =>
+                                      current.map(
+                                        (
+                                          item,
+                                          itemIndex
+                                        ) =>
+                                          itemIndex ===
+                                          index
+                                            ? {
+                                                ...item,
+                                                stock: event
+                                                  .target
+                                                  .value,
+                                              }
+                                            : item
+                                      )
+                                  );
+
+                                  return;
+                                }
+
+                                updateVariant(
+                                  variant.id,
+                                  "stock",
+                                  event.target
+                                    .value
+                                );
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="toggle">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  variant.is_active
+                                }
+                                onChange={(
+                                  event
+                                ) => {
+                                  if (
+                                    !variant.id
+                                  ) {
+                                    setEditVariants(
+                                      (
+                                        current
+                                      ) =>
+                                        current.map(
+                                          (
+                                            item,
+                                            itemIndex
+                                          ) =>
+                                            itemIndex ===
+                                            index
+                                              ? {
+                                                  ...item,
+                                                  is_active:
+                                                    event
+                                                      .target
+                                                      .checked,
+                                                }
+                                              : item
+                                        )
+                                    );
+
+                                    return;
+                                  }
+
+                                  updateVariant(
+                                    variant.id,
+                                    "is_active",
+                                    event.target
+                                      .checked
+                                  );
+                                }}
+                              />
+
+                              Active
+                            </label>
+
+                            {!variant.id && (
+                              <button
+                                className="danger"
+                                onClick={() =>
+                                  removeNewVariant(
+                                    index
+                                  )
+                                }
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </section>
+
+              {/*
+               * -----------------------
+               * IMAGES
+               * -----------------------
+               */}
+
+              {editingId && (
+                <section className="images-preview">
+                  <div className="section-head">
+                    <div className="section-title">
+                      Product Images
+                    </div>
+                  </div>
+
+                  <div className="image-grid">
+                    {getProductImages(
+                      editingId
+                    ).map(
+                      (
+                        image,
+                        index
+                      ) => (
+                        <div
+                          className={
+                            index === 0
+                              ? "image-thumb primary-image"
+                              : "image-thumb"
+                          }
+                          key={image.id}
+                        >
+                          <img
+                            src={
+                              image.image_url
+                            }
+                            alt=""
+                          />
+                        </div>
+                      )
+                    )}
+
+                    {getProductImages(
+                      editingId
+                    ).length === 0 && (
+                      <div className="empty">
+                        No product images.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              <div className="actions">
+                <button
+                  className="secondary"
+                  onClick={closeEditor}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="primary"
+                  onClick={saveProduct}
+                  disabled={saving}
+                >
+                  {saving
+                    ? "Saving..."
+                    : "Save Product"}
+                </button>
+              </div>
+            </section>
+          )}
+
+        <div className="toolbar">
+          <input
+            className="search"
+            placeholder="Search products..."
+            value={search}
+            onChange={(event) =>
+              setSearch(
+                event.target.value
+              )
+            }
+          />
+
+          <select
+            className="filter"
+            value={filter}
+            onChange={(event) =>
+              setFilter(
+                event.target.value as
+                  | "all"
+                  | "active"
+                  | "inactive"
+              )
+            }
+          >
+            <option value="all">
+              All Products
+            </option>
+
+            <option value="active">
+              Active
+            </option>
+
+            <option value="inactive">
+              Inactive
+            </option>
+          </select>
+        </div>
+
+        {loading ? (
+          <div className="empty">
+            Loading products...
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {products.map(
+          <section className="products">
+            {filteredProducts.length ===
+              0 && (
+              <div className="empty">
+                No products found.
+              </div>
+            )}
+
+            {filteredProducts.map(
               (product) => {
-                const price =
-                  getProductPrice(
-                    product
+                const stock =
+                  getProductStock(
+                    product.id
                   );
 
                 const availability =
@@ -732,745 +2311,125 @@ const [savingDiscountId, setSavingDiscountId] =
                     product.id
                   );
 
-                const editing =
-                  editingId ===
-                  product.id;
+                const discount =
+                  getProductDiscount(
+                    product
+                  );
 
-                const saving =
-                  savingId ===
-                  product.id;
+                const customerPrice =
+                  getCustomerPrice(
+                    product
+                  );
 
-                const categoryName =
-                  categories.find(
-                    (category) =>
-                      category.id ===
-                      product.category_id
-                  )?.name ||
-                  "Uncategorized";
-
-                const productVariants =
-                  getProductVariants(
+                const productImages =
+                  getProductImages(
                     product.id
                   );
-                function startDiscount(productId: string) {
-  setDiscountId(productId);
-  setDiscountPercent("");
-  setError("");
-}
 
-function cancelDiscount() {
-  setDiscountId(null);
-  setDiscountPercent("");
-}
+                const image =
+                  productImages[0]
+                    ?.image_url ??
+                  product.main_image_url;
 
-async function saveDiscount(
-  productId: string
-) {
-  const percent = Number(
-    discountPercent
-  );
-
-  if (
-    !Number.isFinite(percent) ||
-    percent <= 0 ||
-    percent >= 100
-  ) {
-    setError(
-      "Discount must be between 1% and 99%."
-    );
-    return;
-  }
-
-  setSavingDiscountId(
-    productId
-  );
-  setError("");
-
-  try {
-    const response =
-      await fetch(
-        `/api/admin/products/${productId}/discount`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            discount_percent:
-              percent,
-          }),
-        }
-      );
-
-    const result =
-      await response.json();
-
-    if (!response.ok) {
-      setError(
-        result.error ||
-          "Unable to apply discount."
-      );
-      return;
-    }
-
-    if (
-      Array.isArray(
-        result.variants
-      )
-    ) {
-      setVariants(
-        (current) =>
-          current.map(
-            (variant) => {
-              const updated =
-                result.variants.find(
-                  (
-                    item: Variant
-                  ) =>
-                    item.id ===
-                    variant.id
-                );
-
-              return updated
-                ? {
-                    ...variant,
-                    ...updated,
-                  }
-                : variant;
-            }
-          )
-      );
-    }
-
-    setDiscountId(null);
-    setDiscountPercent("");
-  } catch (error) {
-    console.error(error);
-
-    setError(
-      "Unable to apply discount."
-    );
-  } finally {
-    setSavingDiscountId(
-      null
-    );
-  }
-}
                 return (
-                  <div
+                  <article
+                    className="card"
                     key={product.id}
-                    className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
                   >
-                    {/* Image */}
-                    <div className="overflow-hidden rounded-lg bg-gray-100">
-                      {product.main_image_url ? (
+                    <div className="image">
+                      {image ? (
                         <img
-                          src={
-                            product.main_image_url
-                          }
+                          src={image}
                           alt={
                             product.name
                           }
-                          className="aspect-square w-full object-cover"
                         />
                       ) : (
-                        <div className="flex aspect-square items-center justify-center text-sm text-gray-500">
+                        <div className="no-image">
                           No image
                         </div>
                       )}
+
+                      {product.is_featured && (
+                        <span className="featured">
+                          FEATURED
+                        </span>
+                      )}
                     </div>
 
-                    {!editing ? (
-                      <>
-                        <div className="mt-4">
-                          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                            {categoryName}
-                          </p>
-
-                          <h2 className="mt-1 font-semibold text-gray-900">
-                            {product.name}
-                          </h2>
-
-                          {product.brand && (
-                            <p className="mt-1 text-xs text-gray-500">
-                              {product.brand}
-                            </p>
-                          )}
-
-                          <div className="mt-3">
-  {(() => {
-    const discountedVariant =
-      productVariants.find(
-        (variant) =>
-          Number(
-            variant.discount_percent ?? 0
-          ) > 0 &&
-          variant.original_price != null
-      );
-
-    const discountPercent =
-      Number(
-        discountedVariant?.discount_percent ?? 0
-      );
-
-    const originalPrice =
-      Number(
-        discountedVariant?.original_price ?? price
-      );
-
-    const currentPrice =
-      Number(
-        discountedVariant?.price ?? price
-      );
-
-    if (
-      discountPercent > 0 &&
-      originalPrice > currentPrice
-    ) {
-      return (
-        <>
-          <p className="text-sm text-gray-500 line-through">
-            ₹{originalPrice.toFixed(2)}
-          </p>
-
-          <p className="text-lg font-bold text-gray-900">
-            ₹{currentPrice.toFixed(2)}
-          </p>
-
-          <p className="mt-1 text-sm font-bold text-green-600">
-            {discountPercent}% OFF
-          </p>
-        </>
-      );
-    }
-
-    return (
-      <p className="text-lg font-bold text-gray-900">
-        ₹{price.toFixed(2)}
-      </p>
-    );
-  })()}
-</div>
-
-                          <p className="mt-1 text-sm font-medium text-gray-700">
-                            {
-                              availability
-                            }
-                          </p>
-
-                          <p className="mt-1 text-xs text-gray-400">
-                            {
-                              productVariants.length
-                            }{" "}
-                            option
-                            {productVariants.length ===
-                            1
-                              ? ""
-                              : "s"}
-                          </p>
-                        </div>
-
-                        <div className="mt-4 grid grid-cols-3 gap-2">
-  <button
-    type="button"
-    onClick={() =>
-      startEditing(product)
-    }
-    className="rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
-  >
-    Edit
-  </button>
-
-  <Link
-    href={`http://localhost:3000/product/${product.slug}`}
-    target="_blank"
-    className="rounded-lg border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900 hover:bg-gray-50"
-  >
-    View
-  </Link>
-
-  <button
-    type="button"
-    onClick={() =>
-      startDiscount(product.id)
-    }
-className="min-w-0 rounded-lg border border-green-600 px-2 py-2 text-xs font-semibold whitespace-nowrap text-green-700 hover:bg-green-50"  >
-    Discount
-  </button>
-</div>
-
-{discountId === product.id && (
-  <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3">
-    <label className="mb-2 block text-xs font-semibold text-gray-700">
-      Discount percentage
-    </label>
-
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        min="1"
-        max="99"
-        step="1"
-        value={discountPercent}
-        onChange={(event) =>
-          setDiscountPercent(
-            event.target.value
-          )
-        }
-        placeholder="10"
-        className="w-20 rounded-lg border border-gray-300 bg-white p-2 text-sm"
-      />
-
-      <span className="text-sm text-gray-700">
-        %
-      </span>
-    </div>
-
-    <div className="mt-3 flex gap-2">
-      <button
-        type="button"
-        disabled={
-          savingDiscountId ===
-          product.id
-        }
-        onClick={() =>
-          saveDiscount(
-            product.id
-          )
-        }
-        className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-400"
-      >
-        {savingDiscountId ===
-        product.id
-          ? "Applying..."
-          : "Apply"}
-      </button>
-
-      <button
-        type="button"
-        disabled={
-          savingDiscountId ===
-          product.id
-        }
-        onClick={
-          cancelDiscount
-        }
-        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700"
-      >
-        Cancel
-      </button>
-    </div>
-  </div>
-)}
-                      </>
-                    ) : (
-                      <div className="mt-4 space-y-4">
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Name
-                          </label>
-
-                          <input
-                            value={
-                              editForm?.name ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        name:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Category
-                          </label>
-
-                          <select
-                            value={
-                              editForm?.category_id ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        category_id:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm"
-                          >
-                            <option value="">
-                              Uncategorized
-                            </option>
-
-                            {categories.map(
-                              (
-                                category
-                              ) => (
-                                <option
-                                  key={
-                                    category.id
-                                  }
-                                  value={
-                                    category.id
-                                  }
-                                >
-                                  {
-                                    category.name
-                                  }
-                                </option>
-                              )
-                            )}
-                          </select>
-                        </div>
-
-                        {/* Variant prices */}
-                        {editVariants.length >
-                          0 && (
-                          <div>
-                            <label className="mb-2 block text-xs font-semibold text-gray-600">
-                              Variant Prices
-                            </label>
-
-                            <div className="space-y-2">
-                              {editVariants.map(
-                                (
-                                  variant
-                                ) => (
-                                  <div
-                                    key={
-                                      variant.id
-                                    }
-                                    className="rounded-lg border border-gray-200 bg-gray-50 p-3"
-                                  >
-                                    <div className="mb-2 text-xs text-gray-500">
-                                      {[
-                                        variant.size,
-                                        variant.color,
-                                      ]
-                                        .filter(
-                                          Boolean
-                                        )
-                                        .join(
-                                          " / "
-                                        ) ||
-                                        variant.sku}
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium text-gray-700">
-                                        ₹
-                                      </span>
-
-                                      <input
-                                        type="number"
-                                        min="0.01"
-                                        step="0.01"
-                                        value={
-                                          variant.price
-                                        }
-                                        onChange={(
-                                          event
-                                        ) =>
-                                          updateEditVariantPrice(
-                                            variant.id,
-                                            event
-                                              .target
-                                              .value
-                                          )
-                                        }
-                                        className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900"
-                                      />
-                                    </div>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Base Price
-                          </label>
-
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={
-                              editForm?.base_price ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        base_price:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Sale Price
-                          </label>
-
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={
-                              editForm?.sale_price ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        sale_price:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Brand
-                          </label>
-
-                          <input
-                            value={
-                              editForm?.brand ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        brand:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Description
-                          </label>
-
-                          <textarea
-                            rows={3}
-                            value={
-                              editForm?.description ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        description:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-gray-600">
-                            Image URL
-                          </label>
-
-                          <input
-                            type="url"
-                            value={
-                              editForm?.main_image_url ??
-                              ""
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setEditForm(
-                                (prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        main_image_url:
-                                          event
-                                            .target
-                                            .value,
-                                      }
-                                    : prev
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={
-                                editForm?.is_featured ??
-                                false
-                              }
-                              onChange={(
-                                event
-                              ) =>
-                                setEditForm(
-                                  (prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          is_featured:
-                                            event
-                                              .target
-                                              .checked,
-                                        }
-                                      : prev
-                                )
-                              }
-                            />
-                            Featured
-                          </label>
-
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={
-                                editForm?.is_active ??
-                                true
-                              }
-                              onChange={(
-                                event
-                              ) =>
-                                setEditForm(
-                                  (prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          is_active:
-                                            event
-                                              .target
-                                              .checked,
-                                        }
-                                      : prev
-                                )
-                              }
-                            />
-                            Active
-                          </label>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            disabled={
-                              saving
-                            }
-                            onClick={() =>
-                              saveProduct(
-                                product.id
-                              )
-                            }
-                            className="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-400"
-                          >
-                            {saving
-                              ? "Saving..."
-                              : "Save"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={
-                              saving
-                            }
-                            onClick={
-                              cancelEditing
-                            }
-                            className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                    <div className="card-body">
+                      <div className="category">
+                        {product.category_name ??
+                          "Uncategorized"}
                       </div>
-                    )}
-                  </div>
+
+                      <div className="name">
+                        {product.name}
+                      </div>
+
+                      {product.brand && (
+                        <div className="brand">
+                          {product.brand}
+                        </div>
+                      )}
+
+                      <div className="card-price">
+                        <span className="card-price-main">
+                          {money(
+                            customerPrice
+                          )}
+                        </span>
+
+                        {discount !==
+                          null && (
+                          <span className="card-price-old">
+                            {money(
+                              product.base_price
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      {discount !==
+                        null && (
+                        <span className="discount-badge">
+                          {discount}% OFF
+                        </span>
+                      )}
+
+                      <div className="stock-row">
+                        <span
+                          className={`stock ${availability.className}`}
+                        >
+                          {
+                            availability.label
+                          }
+                        </span>
+
+                        <span className="stock">
+                          {stock} in stock
+                        </span>
+                      </div>
+
+                      <div className="card-actions">
+                        <button
+                          className="primary"
+                          onClick={() =>
+                            openEditor(
+                              product
+                            )
+                          }
+                        >
+                          View / Edit
+                        </button>
+                      </div>
+                    </div>
+                  </article>
                 );
               }
             )}
-          </div>
+          </section>
         )}
-
-        <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-          Product details and variant prices can be edited here. Stock remains managed in Admin → Inventory.
-        </div>
       </div>
     </main>
   );

@@ -12,6 +12,11 @@ type Order = {
   status: string;
   payment_status: string;
   created_at: string;
+
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy: number | null;
+  location_shared_at: string | null;
 };
 
 const statuses = [
@@ -89,6 +94,21 @@ export default function OrdersTable({
     }
   }
 
+  function openLocation(
+    latitude: number,
+    longitude: number
+  ) {
+    const url =
+      `https://www.google.com/maps/search/?api=1&query=` +
+      `${latitude},${longitude}`;
+
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
   return (
     <div className="mt-8">
       {error && (
@@ -126,6 +146,10 @@ export default function OrdersTable({
                   <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">
                     Date
                   </th>
+
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">
+                    Location
+                  </th>
                 </tr>
               </thead>
 
@@ -134,23 +158,27 @@ export default function OrdersTable({
                   const saving =
                     savingId === order.id;
 
+                  const hasLocation =
+                    order.latitude !== null &&
+                    order.longitude !== null;
+
                   return (
                     <tr
                       key={order.id}
                       className="border-b last:border-b-0"
                     >
                       <td className="px-6 py-4 font-medium">
-  <button
-    type="button"
-    onClick={() =>
-      window.location.href =
-        `/admin/orders/${order.id}`
-    }
-    className="font-semibold text-gray-900 hover:underline"
-  >
-    {order.order_number}
-  </button>
-</td>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.location.href =
+                              `/admin/orders/${order.id}`
+                          }
+                          className="font-semibold text-gray-900 hover:underline"
+                        >
+                          {order.order_number}
+                        </button>
+                      </td>
 
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900">
@@ -219,7 +247,44 @@ export default function OrdersTable({
                       </td>
 
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {formatDateTime(order.created_at)}
+                        {formatDateTime(
+                          order.created_at
+                        )}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        {hasLocation ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openLocation(
+                                order.latitude!,
+                                order.longitude!
+                              )
+                            }
+                            title={
+                              order.location_accuracy !==
+                              null
+                                ? `Accuracy: approximately ${Math.round(
+                                    order.location_accuracy
+                                  )} m`
+                                : "Open customer location"
+                            }
+                            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            <span aria-hidden="true">
+                              📍
+                            </span>
+
+                            <span>
+                              View
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-sm text-gray-400">
+                            —
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

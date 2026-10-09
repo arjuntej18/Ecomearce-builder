@@ -1,45 +1,45 @@
 "use client";
 
-// Customer account with optional Supabase email OTP login and order history.
-
-import {
-  FormEvent,
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
+
+type SessionUser = {
+  authenticated: boolean;
+  userId: string;
+  role: string;
+  name: string | null;
+  email: string;
+  picture: string | null;
+};
 
 type Order = {
   id: string;
   order_number: string;
   total_amount: number;
   status: string;
+  product_names: string;
   payment_status: string;
   created_at: string;
 };
 
-type Step = "email" | "otp";
-
 export default function AccountPage() {
   const router = useRouter();
-  const supabase =
-    createSupabaseBrowserClient();
 
-  const [email, setEmail] =
-    useState("");
+  const [session, setSession] =
+    useState<SessionUser | null>(null);
 
-  const [otp, setOtp] =
-    useState("");
-
-  const [step, setStep] =
-    useState<Step>("email");
-
-  const [loading, setLoading] =
-    useState(false);
+  const [orders, setOrders] =
+    useState<Order[]>([]);
 
   const [checkingSession, setCheckingSession] =
     useState(true);
+
+  const [loadingOrders, setLoadingOrders] =
+    useState(false);
+
+  const [loggingOut, setLoggingOut] =
+    useState(false);
 
   const [message, setMessage] =
     useState("");
@@ -47,47 +47,42 @@ export default function AccountPage() {
   const [error, setError] =
     useState("");
 
-  const [userEmail, setUserEmail] =
-    useState("");
-
-  const [orders, setOrders] =
-    useState<Order[]>([]);
-
-  const [loadingOrders, setLoadingOrders] =
-    useState(false);
-
   useEffect(() => {
-    async function loadSession() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        setUserEmail(
-          user.email ?? ""
-        );
-
-        await syncCustomer();
-
-        await loadOrders();
-      }
-
-      setCheckingSession(false);
-    }
-
     loadSession();
   }, []);
 
-  async function syncCustomer() {
+  async function loadSession() {
     try {
-      await fetch(
-        "/api/account/sync",
+      const response = await fetch(
+        "/api/auth/session",
         {
-          method: "POST",
+          cache: "no-store",
         }
       );
+
+      if (!response.ok) {
+        setSession(null);
+        setCheckingSession(false);
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!data.authenticated) {
+        setSession(null);
+        setCheckingSession(false);
+        return;
+      }
+
+      setSession(data);
+
+      await loadOrders();
     } catch (error) {
       console.error(error);
+      setSession(null);
+    } finally {
+      setCheckingSession(false);
     }
   }
 
@@ -95,249 +90,114 @@ export default function AccountPage() {
     setLoadingOrders(true);
 
     try {
-      const response =
-        await fetch(
-          "/api/account/orders",
-          {
-            cache: "no-store",
-          }
-        );
+      const response = await fetch(
+        "/api/account/orders",
+        {
+          cache: "no-store",
+        }
+      );
 
       const data =
         await response.json();
 
       if (response.ok) {
-        setOrders(
-          data.orders ?? []
-        );
+        setOrders(data.orders ?? []);
+      } else {
+        setOrders([]);
       }
     } catch (error) {
       console.error(error);
+      setOrders([]);
     } finally {
       setLoadingOrders(false);
     }
   }
 
-  async function sendOtp(
-    event: FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    setLoading(true);
-    setError("");
-    setMessage("");
-
-    try {
-      const {
-        error: otpError,
-      } =
-        await supabase.auth.signInWithOtp({
-          email: email
-            .trim()
-            .toLowerCase(),
-          options: {
-            shouldCreateUser: true,
-          },
-        });
-
-      if (otpError) {
-        setError(
-          otpError.message
-        );
-        return;
-      }
-
-      setStep("otp");
-
-      setMessage(
-        "OTP sent. Check your email."
-      );
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        "Unable to send OTP."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function verifyOtp(
-    event: FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    setLoading(true);
-    setError("");
-    setMessage("");
-
-    try {
-      const {
-        data,
-        error: verifyError,
-      } =
-        await supabase.auth.verifyOtp({
-          email: email
-            .trim()
-            .toLowerCase(),
-          token: otp.trim(),
-          type: "email",
-        });
-
-      if (
-        verifyError ||
-        !data.user
-      ) {
-        setError(
-          verifyError?.message ||
-            "Invalid OTP."
-        );
-        return;
-      }
-
-      setUserEmail(
-        data.user.email ?? ""
-      );
-
-      await syncCustomer();
-
-      await loadOrders();
-
-      setMessage(
-        "You're signed in."
-      );
-
-      setOtp("");
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        "Unable to verify OTP."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function logout() {
-    setLoading(true);
+    setLoggingOut(true);
+    setError("");
 
-    await supabase.auth.signOut();
+    try {
+      const response = await fetch(
+        "/api/auth/logout",
+        {
+          method: "POST",
+        }
+      );
 
-    setUserEmail("");
-    setOrders([]);
-    setStep("email");
-    setEmail("");
-    setOtp("");
-    setMessage("");
+      if (!response.ok) {
+        throw new Error(
+          "Logout failed."
+        );
+      }
 
-    setLoading(false);
+      setSession(null);
+      setOrders([]);
+      setMessage(
+        "You have been signed out."
+      );
 
-    router.refresh();
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+
+      setError(
+        "Unable to logout. Please try again."
+      );
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
+  function handleGoogleSuccess() {
+    setMessage(
+      "You're signed in successfully."
+    );
+
+    setError("");
+
+    setTimeout(() => {
+      loadSession();
+    }, 300);
   }
 
   if (checkingSession) {
     return (
-      <main className="min-h-screen bg-gray-50 px-4 py-12">
-        <div className="mx-auto max-w-3xl">
-          Loading account...
+      <main className="min-h-screen bg-gray-50 px-4 pt-32 pb-12 text-gray-900">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-gray-500">
+            Loading account...
+          </p>
         </div>
       </main>
     );
   }
 
-  if (!userEmail) {
+  /*
+   * NOT LOGGED IN
+   */
+
+  if (!session) {
     return (
-      <main className="min-h-screen bg-gray-50 px-4 py-12 text-gray-900">
+      <main className="min-h-screen bg-gray-50 px-4 pt-32 pb-12 text-gray-900">
         <div className="mx-auto max-w-lg">
           <div className="rounded-2xl bg-white p-8 shadow-sm">
+
             <h1 className="text-3xl font-bold">
               My Account
             </h1>
 
             <p className="mt-2 text-gray-500">
-              Sign in with your email. No password required.
+              Sign in securely with Google.
             </p>
 
-            {step === "email" ? (
-              <form
-                onSubmit={sendOtp}
-                className="mt-8 space-y-4"
-              >
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) =>
-                    setEmail(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Email address"
-                  className="w-full rounded-lg border border-gray-300 p-3"
-                  required
-                />
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg bg-black px-4 py-3 font-semibold text-white disabled:opacity-50"
-                >
-                  {loading
-                    ? "Sending OTP..."
-                    : "Continue"}
-                </button>
-              </form>
-            ) : (
-              <form
-                onSubmit={verifyOtp}
-                className="mt-8 space-y-4"
-              >
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(event) =>
-                    setOtp(
-                      event.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
-                  }
-                  placeholder="Enter OTP"
-                  className="w-full rounded-lg border border-gray-300 p-3 text-center text-xl tracking-[0.4em]"
-                  required
-                />
-
-                <button
-                  type="submit"
-                  disabled={
-                    loading ||
-                    otp.length !== 6
-                  }
-                  className="w-full rounded-lg bg-black px-4 py-3 font-semibold text-white disabled:opacity-50"
-                >
-                  {loading
-                    ? "Verifying..."
-                    : "Verify OTP"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep("email");
-                    setOtp("");
-                    setError("");
-                    setMessage("");
-                  }}
-                  className="w-full text-sm text-gray-500 hover:text-black"
-                >
-                  Change email
-                </button>
-              </form>
-            )}
+            <div className="mt-8 flex justify-center">
+              <GoogleSignInButton
+                onSuccess={
+                  handleGoogleSuccess
+                }
+              />
+            </div>
 
             {message && (
               <p className="mt-5 rounded-lg bg-green-50 p-3 text-sm text-green-700">
@@ -352,97 +212,172 @@ export default function AccountPage() {
             )}
 
             <div className="mt-8 border-t pt-6 text-sm text-gray-500">
-              You can continue shopping and checkout without an account.
-              Account login is completely optional.
+              You can continue shopping and
+              checkout without an account.
+              Account login is completely
+              optional.
             </div>
+
           </div>
         </div>
       </main>
     );
   }
 
+  /*
+   * LOGGED IN
+   */
+
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-10 text-gray-900">
+    <main className="min-h-screen bg-gray-50 px-4 pt-32 pb-12 text-gray-900">
       <div className="mx-auto max-w-4xl">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-sm text-gray-500">
-              Signed in as
-            </p>
 
-            <h1 className="text-3xl font-bold">
-              My Account
-            </h1>
+        {/* Account header */}
 
-            <p className="mt-1 text-gray-600">
-              {userEmail}
-            </p>
+        <section className="rounded-2xl bg-white p-6 shadow-sm">
+
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+
+            <div className="flex items-center gap-4">
+
+              {session.picture ? (
+                <img
+                  src={session.picture}
+                  alt={session.name ?? "Account"}
+                  referrerPolicy="no-referrer"
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-200 text-xl font-semibold text-gray-600">
+                  {(session.name ??
+                    session.email ??
+                    "U")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm text-gray-500">
+                  Signed in as
+                </p>
+
+                <h1 className="text-2xl font-bold">
+                  {session.name ||
+                    "Google Account"}
+                </h1>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {session.email}
+                </p>
+              </div>
+
+            </div>
+
+            {/* LOGOUT BUTTON */}
+
+            <button
+              type="button"
+              onClick={logout}
+              disabled={loggingOut}
+              className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loggingOut
+                ? "Logging out..."
+                : "Logout"}
+            </button>
+
           </div>
 
-          <button
-            type="button"
-            onClick={logout}
-            disabled={loading}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-100"
-          >
-            Logout
-          </button>
-        </div>
+        </section>
+
+        {/* Orders */}
 
         <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">
-            My Orders
-          </h2>
 
-          {loadingOrders ? (
-            <p className="mt-6 text-gray-500">
-              Loading orders...
-            </p>
-          ) : orders.length === 0 ? (
-            <p className="mt-6 text-gray-500">
-              No orders found for this account.
-            </p>
+          <div className="flex items-center justify-between">
+
+            <h2 className="text-xl font-semibold">
+              My Orders
+            </h2>
+
+            {loadingOrders && (
+              <span className="text-sm text-gray-500">
+                Loading...
+              </span>
+            )}
+
+          </div>
+
+          {orders.length === 0 ? (
+            <div className="mt-6 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+
+              <p className="font-medium text-gray-700">
+                No orders found for this account.
+              </p>
+
+              <p className="mt-2 text-sm text-gray-500">
+                Orders placed using this Google
+                account will appear here.
+              </p>
+
+            </div>
           ) : (
             <div className="mt-6 divide-y">
-              {orders.map(
-                (order) => (
-                  <div
-                    key={order.id}
-                    className="flex flex-col justify-between gap-3 py-5 sm:flex-row sm:items-center"
-                  >
-                    <div>
-                      <p className="font-semibold">
-                        {order.order_number}
-                      </p>
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        {new Date(
-                          order.created_at
-                        ).toLocaleDateString(
-                          "en-IN"
-                        )}
-                      </p>
-                    </div>
+              {orders.map((order) => (
+                <button
+  type="button"
+  key={order.id}
+  onClick={() =>
+    router.push(`/account/orders/${order.id}`)
+  }
+  className="flex w-full flex-col justify-between gap-3 py-5 text-left transition hover:bg-gray-50 sm:flex-row sm:items-center"
+>
 
-                    <div className="text-left sm:text-right">
-                      <p className="font-bold">
-                        ₹
-                        {Number(
-                          order.total_amount
-                        ).toFixed(2)}
-                      </p>
+                  <div>
+                    <p className="font-semibold">
+  {order.product_names}
+</p>
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        {order.payment_status} ·{" "}
-                        {order.status}
-                      </p>
-                    </div>
+<p className="mt-1 text-xs text-gray-400">
+  {order.order_number}
+</p>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      {new Date(
+                        order.created_at
+                      ).toLocaleDateString(
+                        "en-IN"
+                      )}
+                    </p>
                   </div>
-                )
-              )}
+
+                  <div className="text-left sm:text-right">
+
+                    <p className="font-bold">
+                      ₹
+                      {Number(
+                        order.total_amount
+                      ).toFixed(2)}
+                    </p>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      {order.payment_status}
+                      {" · "}
+                      {order.status}
+                    </p>
+
+                  </div>
+
+                </button>
+              ))}
+
             </div>
           )}
+
         </section>
+
       </div>
     </main>
   );

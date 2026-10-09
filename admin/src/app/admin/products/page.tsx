@@ -3,13 +3,9 @@
 // Admin product list with inline variant-price editing.
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+
 
 type Product = {
   id: string;
@@ -75,134 +71,38 @@ export default function ProductsPage() {
     useState("");
 
   async function loadProducts() {
-    setLoading(true);
-    setError("");
+  setLoading(true);
+  setError("");
 
-    try {
-      const {
-        data: productData,
-        error: productError,
-      } = await supabase
-        .from("products")
-        .select(
-          "id, name, slug, brand, base_price, sale_price, is_active, is_featured"
-        )
-        .order("created_at", {
-          ascending: false,
-        });
+  try {
+    const response = await fetch("/api/admin/products", {
+      cache: "no-store",
+    });
 
-      if (productError) {
-        console.error(productError);
-        setError(
-          "Unable to load products."
-        );
-        return;
-      }
+    const result = await response.json();
 
-      const loadedProducts =
-        (productData ??
-          []) as Product[];
-
-      setProducts(
-        loadedProducts
-      );
-
-      if (!loadedProducts.length) {
-        setVariants([]);
-        setInventory([]);
-        return;
-      }
-
-      const productIds =
-        loadedProducts.map(
-          (product) =>
-            product.id
-        );
-
-      const {
-        data: variantData,
-        error: variantError,
-      } = await supabase
-        .from("product_variants")
-        .select(
-          "id, product_id, price, size, color, sku"
-        )
-        .in(
-          "product_id",
-          productIds
-        )
-        .eq(
-          "is_active",
-          true
-        );
-
-      if (variantError) {
-        console.error(
-          variantError
-        );
-        setVariants([]);
-        setInventory([]);
-        return;
-      }
-
-      const loadedVariants =
-        (variantData ??
-          []) as Variant[];
-
-      setVariants(
-        loadedVariants
-      );
-
-      if (!loadedVariants.length) {
-        setInventory([]);
-        return;
-      }
-
-      const variantIds =
-        loadedVariants.map(
-          (variant) =>
-            variant.id
-        );
-
-      const {
-        data: inventoryData,
-        error: inventoryError,
-      } = await supabase
-        .from("inventory")
-        .select(
-          "variant_id, quantity"
-        )
-        .in(
-          "variant_id",
-          variantIds
-        );
-
-      if (inventoryError) {
-        console.error(
-          inventoryError
-        );
-        setInventory([]);
-        return;
-      }
-
-      setInventory(
-        (inventoryData ??
-          []) as Inventory[]
-      );
-    } catch (error) {
-      console.error(error);
-
+    if (!response.ok) {
       setError(
-        "Unable to load products."
+        result.error || "Unable to load products."
       );
-
-      setProducts([]);
-      setVariants([]);
-      setInventory([]);
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    setProducts(result.products ?? []);
+    setVariants(result.variants ?? []);
+    setInventory(result.inventory ?? []);
+  } catch (error) {
+    console.error(error);
+
+    setError("Unable to load products.");
+
+    setProducts([]);
+    setVariants([]);
+    setInventory([]);
+  } finally {
+    setLoading(false);
   }
+}
 
   useEffect(() => {
     loadProducts();

@@ -1,91 +1,42 @@
-// Returns one order for the order-confirmation page.
-
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 export async function GET(
-  _request: Request,
-  context: {
-    params: Promise<{ id: string }>;
-  }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
+    const { id } = await params;
 
-    if (!id) {
-      return NextResponse.json(
-        {
-          error:
-            "Order ID is required.",
+    const cookie = request.headers.get("cookie") ?? "";
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/orders/${encodeURIComponent(id)}`,
+      {
+        headers: {
+          cookie,
         },
-        { status: 400 }
-      );
-    }
+        cache: "no-store",
+      }
+    );
 
-    const {
-      data: order,
-      error,
-    } = await supabase
-      .from("orders")
-      .select(
-        `
-        order_number,
-        invoice_number,
-        expected_delivery_date,
-        payment_status,
-        total_amount
-        `
-      )
-      .eq("id", id)
-      .single();
+    const data = await response.json();
 
-    if (error || !order) {
-      console.error(error);
-
-      return NextResponse.json(
-        {
-          error:
-            "Order not found.",
-        },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      order: {
-        order_number:
-          order.order_number,
-
-        invoice_number:
-          order.invoice_number,
-
-        expected_delivery_date:
-          order.expected_delivery_date,
-
-        payment_status:
-          order.payment_status,
-
-        total_amount:
-          Number(
-            order.total_amount
-          ),
-      },
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Order details proxy error:", error);
 
     return NextResponse.json(
       {
-        error:
-          "Unable to load order.",
+        error: "Unable to load order.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

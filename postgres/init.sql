@@ -33,7 +33,8 @@ CREATE TABLE profiles (
     phone text,
     role text NOT NULL DEFAULT 'customer'
         CHECK (role IN ('customer', 'admin')),
-    created_at timestamptz DEFAULT now()
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now()
 );
 
 
@@ -46,7 +47,11 @@ CREATE TABLE categories (
     name text NOT NULL,
     slug text NOT NULL,
     description text,
+    image_url text,
+    display_order integer NOT NULL DEFAULT 0,
+    is_active boolean NOT NULL DEFAULT true,
     created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
 
     CONSTRAINT categories_name_key UNIQUE (name),
     CONSTRAINT categories_slug_key UNIQUE (slug)
@@ -73,6 +78,9 @@ CREATE TABLE products (
     created_at timestamptz DEFAULT now(),
     updated_at timestamptz DEFAULT now(),
     is_featured boolean NOT NULL DEFAULT false,
+
+    rating_avg numeric(3,2) NOT NULL DEFAULT 0 CHECK (rating_avg BETWEEN 0 AND 5),
+    rating_count integer NOT NULL DEFAULT 0 CHECK (rating_count >= 0),
 
     CONSTRAINT products_slug_key UNIQUE (slug),
 
@@ -242,6 +250,7 @@ CREATE TABLE addresses (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id uuid NOT NULL,
     full_name text NOT NULL,
+    email text NOT NULL,
     phone text NOT NULL,
     address_line1 text NOT NULL,
     address_line2 text,
@@ -444,15 +453,12 @@ CREATE TABLE coupons (
 CREATE TABLE reviews (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    rating integer NOT NULL
-        CHECK (rating >= 1 AND rating <= 5),
+    user_id uuid,
+    customer_email text,
+    rating integer NOT NULL,
     title text,
     comment text,
     created_at timestamptz DEFAULT now(),
-
-    CONSTRAINT reviews_product_id_user_id_key
-        UNIQUE (product_id, user_id),
 
     CONSTRAINT reviews_product_id_fkey
         FOREIGN KEY (product_id)
@@ -462,9 +468,14 @@ CREATE TABLE reviews (
     CONSTRAINT reviews_user_id_fkey
         FOREIGN KEY (user_id)
         REFERENCES profiles(id)
-        ON DELETE CASCADE
-);
+        ON DELETE SET NULL,
 
+    CONSTRAINT reviews_rating_check
+        CHECK (rating >= 1 AND rating <= 5),
+
+    CONSTRAINT reviews_product_user_email_key
+        UNIQUE (product_id, user_id, customer_email)
+);
 
 -- ============================================================
 -- STORE SETTINGS

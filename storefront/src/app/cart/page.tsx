@@ -9,13 +9,14 @@ type CartItem = {
   quantity: number;
   variant_id: string;
   product_variants: {
-    id: string;
-    sku: string;
-    size: string | null;
-    color: string | null;
-    price: number;
-    image_url: string | null;
-    products: {
+  id: string;
+  sku: string;
+  size: string | null;
+  color: string | null;
+  price: number;
+  image_url: string | null;
+  inventory_quantity: number;
+  products: {
       id: string;
       name: string;
       slug: string;
@@ -116,60 +117,127 @@ export default function CartPage() {
         <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
             {items.map((item) => {
-              const variant = item.product_variants;
-              const product = variant.products;
+  const variant = item.product_variants;
+  const product = variant.products;
 
-              const itemTotal =
-                Number(variant.price) * Number(item.quantity);
+  const stock = Number(variant.inventory_quantity ?? 0);
 
-              return (
-                <div
-                  key={item.id}
-                  className="flex gap-4 rounded-xl border bg-white p-4"
-                >
-                  <div className="h-24 w-24 overflow-hidden rounded-lg bg-gray-100">
-                    {(variant.image_url ||
-                      product.main_image_url) && (
-                      <img
-                        src={
-                          variant.image_url ||
-                          product.main_image_url ||
-                          ""
-                        }
-                        alt={product.name}
-                        className="h-full w-full object-cover"
-                      />
-                    )}
-                  </div>
+  const stockText =
+    stock <= 0
+      ? "Out of Stock"
+      : stock <= 5
+      ? `Only ${stock} left`
+      : "In Stock";
 
-                  <div className="flex-1">
-                    <h2 className="font-semibold text-gray-900">
-                      {product.name}
-                    </h2>
+  const stockClass =
+    stock <= 0
+      ? "text-red-600"
+      : stock <= 5
+      ? "text-orange-600"
+      : "text-green-600";
 
-                    <p className="mt-1 text-sm text-gray-500">
-                      {[variant.color, variant.size]
-                        .filter(Boolean)
-                        .join(" / ") || "Standard"}
-                    </p>
+  return (
+    <div
+      key={item.id}
+      className="rounded-xl border bg-white p-4"
+    >
+      <div className="flex gap-4">
+        <Link
+          href={`/product/${product.slug}`}
+          className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-gray-100"
+        >
+          {(variant.image_url || product.main_image_url) && (
+            <img
+              src={
+                variant.image_url ||
+                product.main_image_url ||
+                ""
+              }
+              alt={product.name}
+              className="h-full w-full object-cover transition hover:scale-105"
+            />
+          )}
+        </Link>
 
-                    <p className="mt-2 text-sm text-gray-500">
-                      Quantity: {item.quantity}
-                    </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <Link
+              href={`/product/${product.slug}`}
+              className="font-semibold text-gray-900 hover:text-[#72263a]"
+            >
+              {product.name}
+            </Link>
 
-                    <p className="mt-2 font-semibold text-gray-900">
-                      ₹{Number(variant.price).toFixed(2)}
-                    </p>
-                  </div>
+            <button
+  type="button"
+  onClick={async () => {
+    try {
+      const response = await fetch("/api/cart", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: getGuestSessionId(),
+          itemId: item.id,
+        }),
+      });
 
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">
-                      ₹{itemTotal.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to remove item");
+      }
+
+      setCart((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          cart_items: prev.cart_items.filter(
+            (cartItem) => cartItem.id !== item.id
+          ),
+        };
+      });
+    } catch (error) {
+      console.error("Remove cart item failed:", error);
+      alert("Failed to remove item.");
+    }
+  }}
+  className="text-xl font-semibold text-gray-400 transition hover:text-red-600"
+  aria-label={`Remove ${product.name}`}
+>
+  ×
+</button>
+          </div>
+
+          <p className="mt-1 text-sm text-gray-500">
+            {[variant.color, variant.size]
+              .filter(Boolean)
+              .join(" / ") || "Standard"}
+          </p>
+
+          <p className="mt-2 font-semibold text-gray-900">
+            ₹{Number(variant.price).toFixed(2)}
+          </p>
+
+          <p className={`mt-1 text-sm font-medium ${stockClass}`}>
+            ● {stockText}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t pt-4">
+        <Link
+          href={`/product/${product.slug}`}
+          className="block w-full rounded-lg bg-[#72263a] px-4 py-3 text-center font-semibold text-white transition hover:bg-[#5d1e2f]"
+        >
+          View / Buy Product
+        </Link>
+      </div>
+    </div>
+  );
+})}
           </div>
 
           <aside className="h-fit rounded-xl border bg-white p-6">

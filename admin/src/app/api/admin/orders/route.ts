@@ -1,13 +1,8 @@
-// Updates an order status for an authenticated admin.
-
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 const allowedStatuses = [
   "pending",
@@ -18,42 +13,63 @@ const allowedStatuses = [
   "cancelled",
 ] as const;
 
-export async function PATCH(request: Request) {
+export async function GET() {
   try {
-    const supabaseServer =
-      await createSupabaseServerClient();
+    const admin = await verifyAdmin();
 
-    const {
-      data: { user },
-    } = await supabaseServer.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Unauthorized." },
-        { status: 401 }
-      );
-    }
-
-    const { data: profile } =
-      await supabaseServer
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-    if (profile?.role !== "admin") {
+    if (!admin) {
       return NextResponse.json(
         { error: "Admin access required." },
         { status: 403 }
       );
     }
 
-    const { orderId, status } =
-      await request.json();
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/orders`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
+
+    const data = await response.json();
+
+    return NextResponse.json(data, {
+      status: response.status,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      { error: "Unable to load orders." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  request: Request
+) {
+  try {
+    const admin = await verifyAdmin();
+
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Admin access required." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+
+    const { orderId, status } = body;
 
     if (!orderId || !status) {
       return NextResponse.json(
-        { error: "Order ID and status are required." },
+        {
+          error:
+            "Order ID and status are required.",
+        },
         { status: 400 }
       );
     }
@@ -67,37 +83,33 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { data: order, error } =
-      await supabaseAdmin
-        .from("orders")
-        .update({
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/orders/${orderId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           status,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", orderId)
-        .select(
-          "id, order_number, status"
-        )
-        .single();
+        }),
+        cache: "no-store",
+      }
+    );
 
-    if (error || !order) {
-      console.error(error);
+    const data = await response.json();
 
-      return NextResponse.json(
-        { error: "Unable to update order status." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      order,
+    return NextResponse.json(data, {
+      status: response.status,
     });
   } catch (error) {
     console.error(error);
 
     return NextResponse.json(
-      { error: "Unable to update order status." },
+      {
+        error:
+          "Unable to update order status.",
+      },
       { status: 500 }
     );
   }

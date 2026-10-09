@@ -1,16 +1,16 @@
 "use client";
 
-// Handles checkout, OTP verification, order creation and Razorpay payment.
+// Handles checkout, order creation and Razorpay payment.
 
 import {
+  ChangeEvent,
   FormEvent,
   Suspense,
+  useEffect,
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
-
-type Step = "details" | "otp";
-
+import GoogleSignInButton from "@/components/GoogleSignInButton";
 type Pricing = {
   subtotal: number;
   discount: number;
@@ -20,22 +20,67 @@ type Pricing = {
 function CheckoutPageContent() {
   const searchParams = useSearchParams();
 
-  const buyVariantId =
-    searchParams.get("buyVariant");
+  const [customerLocation, setCustomerLocation] =
+    useState<{
+      latitude: number;
+      longitude: number;
+      accuracy: number;
+    } | null>(null);
 
-  const buyQuantity = Math.max(
-    1,
-    Number(
-      searchParams.get("quantity") ||
-        "1"
-    )
-  );
+  const buyVariantId =
+    searchParams.get("buyVariant") ?? "";
+
+  const initialQuantity = Math.max(
+  1,
+  Number(searchParams.get("quantity") || "1")
+);
+
+const [buyQuantity, setBuyQuantity] =
+  useState(initialQuantity);
+const [availableStock, setAvailableStock] =
+  useState<number | null>(null);
+
+useEffect(() => {
+  if (!buyVariantId) return;
+
+  async function loadStock() {
+    try {
+      const response = await fetch(
+  `/api/inventory/${encodeURIComponent(
+    buyVariantId
+  )}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load stock");
+      }
+
+      const data = await response.json();
+
+      setAvailableStock(
+        Number(data.quantity ?? 0)
+      );
+    } catch (error) {
+      console.error(
+        "Failed to load checkout stock:",
+        error
+      );
+
+      setAvailableStock(null);
+    }
+  }
+
+  loadStock();
+}, [buyVariantId]);
+
 
   const isDirectBuy =
     Boolean(buyVariantId);
 
-  const [step, setStep] =
-    useState<Step>("details");
+
 
   const [loading, setLoading] =
     useState(false);
@@ -59,7 +104,63 @@ function CheckoutPageContent() {
       country: "India",
     });
 
-  const [otp, setOtp] = useState("");
+const [isAuthenticated, setIsAuthenticated] =
+  useState(false);
+
+const [authLoading, setAuthLoading] =
+  useState(true);
+
+useEffect(() => {
+  async function loadSession() {
+    try {
+      const response = await fetch(
+        "/api/auth/session",
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      const session =
+        await response.json();
+
+      if (
+        session?.authenticated === true &&
+        session?.role === "customer"
+      ) {
+        setIsAuthenticated(true);
+
+        setCustomer((prev) => ({
+          ...prev,
+          name:
+            session.name ??
+            prev.name,
+          email:
+            session.email ??
+            prev.email,
+        }));
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      console.error(
+        "Session loading error:",
+        error
+      );
+
+      setIsAuthenticated(false);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  loadSession();
+}, []);
+
 
   const [couponCode, setCouponCode] =
     useState("");
@@ -98,7 +199,35 @@ function CheckoutPageContent() {
         localStorage.getItem(
           "guest_cart_session_id"
         );
+      const sessionResponse = await fetch(
+  "/api/auth/session",
+  {
+    method: "GET",
+    cache: "no-store",
+  }
+);
 
+if (!sessionResponse.ok) {
+  setError(
+    "Please sign in with Google before placing your order."
+  );
+  setLoading(false);
+  return;
+}
+
+const sessionData =
+  await sessionResponse.json();
+
+if (
+  !sessionData?.authenticated ||
+  sessionData.role !== "customer"
+){
+  setError(
+    "Please sign in with Google before placing your order."
+  );
+  setLoading(false);
+  return;
+}
       const response = await fetch(
         "/api/coupons/validate",
         {
@@ -118,6 +247,7 @@ function CheckoutPageContent() {
             quantity: isDirectBuy
               ? buyQuantity
               : 1,
+              location: customerLocation,
           }),
         }
       );
@@ -175,10 +305,16 @@ function CheckoutPageContent() {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+
         const {
           latitude,
           longitude,
         } = position.coords;
+        setCustomerLocation({
+  latitude,
+  longitude,
+  accuracy: position.coords.accuracy,
+});
 
         try {
           const response =
@@ -245,10 +381,11 @@ function CheckoutPageContent() {
         }
       },
       (locationError) => {
-        console.error(
-          locationError
-        );
-
+  console.error(
+    "Geolocation error:",
+    locationError.code,
+    locationError.message
+  );
         setLoading(false);
         setMessage("");
 
@@ -281,91 +418,30 @@ function CheckoutPageContent() {
     setLoading(true);
     setError("");
     setMessage("");
-
+    if (!isAuthenticated) {
+  setError(
+    "Please sign in with Google before placing your order."
+  );
+  setLoading(false);
+  return;
+}
+if (
+  isDirectBuy &&
+  availableStock !== null &&
+  (availableStock <= 0 ||
+    buyQuantity > availableStock)
+) {
+  setError(
+    availableStock <= 0
+      ? "This product is out of stock."
+      : `Only ${availableStock} item${
+          availableStock === 1 ? "" : "s"
+        } available.`
+  );
+  setLoading(false);
+  return;
+}
     try {
-      const response = await fetch(
-        "/api/auth/send-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            email: customer.email,
-          }),
-        }
-      );
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        setError(
-          data.error ||
-            "Unable to send OTP."
-        );
-        return;
-      }
-      
-      {message && (
-  <div className="font-serif text-xl italic text-gray-600">
-    {message}
-  </div>
-)}
-
-
-      setStep("otp");
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        "Unable to send OTP. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleOtpSubmit(
-    event: FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    setLoading(true);
-    setError("");
-    setMessage("");
-
-    try {
-      const verificationResponse =
-        await fetch(
-          "/api/auth/verify-otp",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              email: customer.email,
-              token: otp,
-            }),
-          }
-        );
-
-      const verificationData =
-        await verificationResponse.json();
-
-      if (
-        !verificationResponse.ok
-      ) {
-        setError(
-          verificationData.error ||
-            "Invalid OTP."
-        );
-        return;
-      }
-
       const sessionId =
         localStorage.getItem(
           "guest_cart_session_id"
@@ -378,13 +454,16 @@ function CheckoutPageContent() {
         setError(
           "Cart session not found."
         );
+        setLoading(false);
         return;
       }
 
       setMessage(
-        "Email verified. Creating your order..."
+        "Creating your order..."
       );
 
+
+      console.log("ORDER LOCATION:", customerLocation);
       const orderResponse =
         await fetch(
           "/api/orders",
@@ -406,7 +485,7 @@ function CheckoutPageContent() {
               quantity: isDirectBuy
                 ? buyQuantity
                 : undefined,
-
+              location: customerLocation,
               couponCode:
                 couponCode
                   .trim()
@@ -443,7 +522,10 @@ function CheckoutPageContent() {
 
       const orderData =
         await orderResponse.json();
-
+        console.log("ORDER RESPONSE:", {
+  status: orderResponse.status,
+  data: orderData,
+});
       if (!orderResponse.ok) {
         setError(
           orderData.error ||
@@ -495,23 +577,12 @@ function CheckoutPageContent() {
 
       script.onload = () => {
         const options = {
-          key:
-            paymentData.keyId,
-
-          amount:
-            paymentData.amount,
-
-          currency:
-            paymentData.currency,
-
+          key: paymentData.keyId,
+          amount: paymentData.amount,
+          currency: paymentData.currency,
           name: "Your Store",
-
-          description:
-            `Order ${orderData.orderNumber}`,
-
-          order_id:
-            paymentData.razorpayOrderId,
-
+          description: `Order ${orderData.orderNumber}`,
+          order_id: paymentData.razorpayOrderId,
           handler: async (
             response: {
               razorpay_payment_id: string;
@@ -620,61 +691,43 @@ function CheckoutPageContent() {
               console.error(err);
 
               setError(
-                "Unable to verify payment."
+                "Unable to complete checkout."
               );
+            } finally {
+              setLoading(false);
             }
-          },
-
-          prefill: {
-            name: customer.name,
-            email: customer.email,
-            contact:
-              customer.phone,
-          },
-
-          theme: {
-            color: "#000000",
           },
         };
 
-        const Razorpay =
-          (window as any).Razorpay;
-
-        const razorpay =
-          new Razorpay(options);
-
+        const razorpay = new (
+          window as unknown as {
+            Razorpay: new (options: unknown) => {
+              open: () => void;
+            };
+          }
+        ).Razorpay(options);
         razorpay.open();
       };
 
-      script.onerror = () => {
-        setError(
-          "Unable to load Razorpay Checkout."
-        );
-      };
-
-      document.body.appendChild(
-        script
-      );
+      document.body.appendChild(script);
     } catch (err) {
       console.error(err);
 
-      setError(
-        "Unable to complete checkout."
-      );
+      setError("Unable to complete checkout.");
     } finally {
       setLoading(false);
     }
   }
 
   function handleChange(
-    event: React.ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>
   ) {
     const {
       name,
       value,
-    } = event.target;
+    } = event.currentTarget;
 
-    setCustomer((prev) => ({
+    setCustomer((prev: typeof customer) => ({
       ...prev,
       [name]: value,
     }));
@@ -686,10 +739,78 @@ function CheckoutPageContent() {
   Checkout
 </h1>
 
-      {isDirectBuy && (
-  <div className="mt-4 font-serif text-[24px] italic text-gray-600">
-    Buying the selected product only.
-  </div>
+    {isDirectBuy && (
+  <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-white/70">
+          Selected product
+        </p>
+
+        <p className="mt-1 text-base font-semibold text-white">
+          Quantity
+        </p>
+      </div>
+
+      <div className="flex items-center overflow-hidden rounded-xl border border-white/15 bg-white/[0.08]">
+        <button
+          type="button"
+          onClick={() =>
+            setBuyQuantity((prev) =>
+              Math.max(1, prev - 1)
+            )
+          }
+          disabled={buyQuantity <= 1}
+          className="flex h-11 w-11 items-center justify-center text-xl text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          −
+        </button>
+
+        <span className="flex h-11 min-w-12 items-center justify-center border-x border-white/10 text-base font-semibold text-white">
+          {buyQuantity}
+        </span>
+
+        <button
+          type="button"
+          onClick={() =>
+            setBuyQuantity((prev) =>
+              Math.min(
+                availableStock ?? prev,
+                prev + 1
+              )
+            )
+          }
+          disabled={
+            availableStock !== null &&
+            buyQuantity >= availableStock
+          }
+          className="flex h-11 w-11 items-center justify-center text-xl text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          +
+        </button>
+      </div>
+    </div>
+
+    <div className="mt-3 flex items-center justify-between text-sm">
+      <span className="text-white/50">
+        Available stock
+      </span>
+
+      <span
+        className={
+          availableStock === 0
+            ? "font-medium text-red-400"
+            : "font-medium text-green-400"
+        }
+      >
+        {availableStock === null
+          ? "Checking..."
+          : availableStock === 0
+          ? "Out of stock"
+          : `${availableStock} available`}
+      </span>
+    </div>
+  </section>
 )}
 
 
@@ -776,8 +897,24 @@ function CheckoutPageContent() {
   )}
 </section>
 
-      {step === "details" && (
-        <form
+
+{!authLoading && !isAuthenticated && (
+  <div className="mb-6 rounded-xl border border-green-400/20 bg-green-500/5 p-5">
+    <p className="mb-4 text-sm text-neutral-300">
+      Sign in with Google to continue checkout.
+    </p>
+
+    <GoogleSignInButton
+      onSuccess={() => {
+        window.location.reload();
+      }}
+    />
+  </div>
+)}
+
+
+
+      <form
           onSubmit={
             handleDetailsSubmit
           }
@@ -794,14 +931,23 @@ function CheckoutPageContent() {
           />
 
           <input
-            name="email"
-            type="email"
-            value={customer.email}
-            onChange={handleChange}
-            placeholder="Email"
-            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
-            required
-          />
+  name="email"
+  type="email"
+  value={customer.email}
+  onChange={
+    isAuthenticated
+      ? undefined
+      : handleChange
+  }
+  placeholder="Email"
+  readOnly={isAuthenticated}
+  className={`w-full rounded-[18px] border border-white/15 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition ${
+    isAuthenticated
+      ? "cursor-not-allowed bg-white/[0.04] opacity-80"
+      : "bg-white/10 backdrop-blur-xl focus:border-white/35 focus:bg-white/15"
+  }`}
+  required
+/>
 
           <input
             name="phone"
@@ -889,64 +1035,10 @@ function CheckoutPageContent() {
             disabled={loading}
 className="w-full rounded-[999px] border border-green-400/30 bg-green-500/80 px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_30px_rgba(34,197,94,0.22)] backdrop-blur-xl transition hover:bg-green-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-600">
             {loading
-              ? "Sending OTP..."
+              ? "Processing..."
               : "Continue"}
           </button>
         </form>
-      )}
-
-      {step === "otp" && (
-        <form
-          onSubmit={handleOtpSubmit}
-          className="mx-auto mt-10 max-w-md space-y-10 rounded-[28px] border border-white/10 bg-white/[0.05] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.25)] backdrop-blur-2xl sm:p-8"
-        >
-          <p>
-            Enter the OTP sent to{" "}
-            <strong>
-              {customer.email}
-            </strong>
-            .
-          </p>
-
-          <input
-            value={otp}
-            onChange={(event) =>
-              setOtp(
-                event.target.value
-              )
-            }
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="Enter OTP"
-            className="w-full rounded-[18px] border border-white/15 bg-white/10 p-4 text-white placeholder:text-white/45 backdrop-blur-xl outline-none transition focus:border-white/35 focus:bg-white/15"
-            required
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-[999px] border border-green-400/30 bg-green-500/80 px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_30px_rgba(34,197,94,0.22)] backdrop-blur-xl transition hover:bg-green-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-600"
-          >
-            {loading
-              ? "Verifying..."
-              : "Verify Email"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setStep("details");
-              setOtp("");
-              setError("");
-              setMessage("");
-            }}
-            className="w-full rounded-[18px] border border-white/15 bg-white/[0.08] px-4 py-4 text-white placeholder:text-white/40 outline-none backdrop-blur-xl transition focus:border-white/35 focus:bg-white/[0.12]"
-          >
-            Back
-          </button>
-        </form>
-      )}
 
       {message && (
         <p className="mt-4 rounded border p-3">

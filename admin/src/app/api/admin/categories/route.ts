@@ -1,157 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { verifyAdmin } from "@/lib/verifyAdmin";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const BACKEND_URL =
+  process.env.BACKEND_URL ?? "http://backend:4000";
 
 async function requireAdmin() {
-  const supabaseSession = await createSupabaseServerClient();
+  const admin = await verifyAdmin();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabaseSession.auth.getUser();
-
-  if (userError || !user) {
-    return {
-      errorResponse: NextResponse.json(
-        { error: "Unauthorized." },
-        { status: 401 }
-      ),
-    };
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Admin access required." },
+      { status: 403 }
+    );
   }
 
-  const { data: profile, error: profileError } =
-    await supabaseSession
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-  if (profileError || profile?.role !== "admin") {
-    return {
-      errorResponse: NextResponse.json(
-        { error: "Admin access required." },
-        { status: 403 }
-      ),
-    };
-  }
-
-  return {
-    errorResponse: null,
-  };
+  return null;
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const authError = await requireAdmin();
 
-  if (auth.errorResponse) {
-    return auth.errorResponse;
+  if (authError) {
+    return authError;
   }
 
-  const { data: categories, error } = await supabaseAdmin
-    .from("categories")
-    .select("id, name, slug, description, created_at")
-    .order("created_at", { ascending: false });
+  try {
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/categories`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
 
-  if (error) {
-    console.error("Load categories error:", error);
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        data,
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error(
+      "Load categories request error:",
+      error
+    );
 
     return NextResponse.json(
       { error: "Unable to load categories." },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    categories: categories ?? [],
-  });
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const authError = await requireAdmin();
 
-  if (auth.errorResponse) {
-    return auth.errorResponse;
+  if (authError) {
+    return authError;
   }
 
   try {
     const body = await request.json();
 
-    const name =
-      typeof body.name === "string"
-        ? body.name.trim()
-        : "";
-
-    const slug =
-      typeof body.slug === "string"
-        ? body.slug.trim().toLowerCase()
-        : "";
-
-    const description =
-      typeof body.description === "string"
-        ? body.description.trim() || null
-        : null;
-
-    if (!name) {
-      return NextResponse.json(
-        { error: "Category name is required." },
-        { status: 400 }
-      );
-    }
-
-    if (!slug) {
-      return NextResponse.json(
-        { error: "Category slug is required." },
-        { status: 400 }
-      );
-    }
-
-    const { data: existingCategory } =
-      await supabaseAdmin
-        .from("categories")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
-
-    if (existingCategory) {
-      return NextResponse.json(
-        {
-          error:
-            "A category with this slug already exists.",
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/categories`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        { status: 409 }
-      );
-    }
+        body: JSON.stringify(body),
+      }
+    );
 
-    const { data: category, error } =
-      await supabaseAdmin
-        .from("categories")
-        .insert({
-          name,
-          slug,
-          description,
-        })
-        .select(
-          "id, name, slug, description, created_at"
-        )
-        .single();
+    const data = await response.json();
 
-    if (error) {
-      console.error("Create category error:", error);
-
+    if (!response.ok) {
       return NextResponse.json(
-        { error: "Unable to create category." },
-        { status: 500 }
+        data,
+        { status: response.status }
       );
     }
 
     return NextResponse.json(
-      { category },
-      { status: 201 }
+      data,
+      { status: response.status }
     );
   } catch (error) {
     console.error(
@@ -167,44 +104,36 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const authError = await requireAdmin();
 
-  if (auth.errorResponse) {
-    return auth.errorResponse;
+  if (authError) {
+    return authError;
   }
 
   try {
     const body = await request.json();
 
-    const id =
-      typeof body.id === "string"
-        ? body.id.trim()
-        : "";
+    const response = await fetch(
+      `${BACKEND_URL}/api/admin/categories`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }
+    );
 
-    if (!id) {
+    const data = await response.json();
+
+    if (!response.ok) {
       return NextResponse.json(
-        { error: "Category ID is required." },
-        { status: 400 }
+        data,
+        { status: response.status }
       );
     }
 
-    const { error } = await supabaseAdmin
-      .from("categories")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      console.error("Delete category error:", error);
-
-      return NextResponse.json(
-        { error: "Unable to delete category." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-    });
+    return NextResponse.json(data);
   } catch (error) {
     console.error(
       "Delete category request error:",

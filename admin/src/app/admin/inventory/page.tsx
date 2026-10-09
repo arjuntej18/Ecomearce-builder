@@ -1,12 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+
 
 type Product = {
   id: string;
@@ -49,137 +45,127 @@ export default function InventoryPage() {
   const [error, setError] = useState("");
 
   async function loadInventory() {
-    setLoading(true);
-    setError("");
+  setLoading(true);
+  setError("");
 
-    try {
-      const {
-        data: productData,
-        error: productError,
-      } = await supabase
-        .from("products")
-        .select("id, name, slug");
-
-      if (productError) {
-        console.error(productError);
-        setError("Unable to load products.");
-        return;
+  try {
+    const response = await fetch(
+      "/api/admin/products",
+      {
+        method: "GET",
+        cache: "no-store",
       }
+    );
 
-      const products =
-        (productData ?? []) as Product[];
+    const result = await response.json();
 
-      if (!products.length) {
-        setRows([]);
-        return;
-      }
+    if (!response.ok) {
+      setError(
+        result.error ||
+          "Unable to load inventory."
+      );
+      return;
+    }
 
-      const productIds = products.map(
-        (product) => product.id
+    const products =
+      Array.isArray(result.products)
+        ? result.products
+        : [];
+
+    const variants =
+      Array.isArray(result.variants)
+        ? result.variants
+        : [];
+
+    const inventory =
+      Array.isArray(result.inventory)
+        ? result.inventory
+        : [];
+
+    const activeVariants =
+      variants.filter(
+        (variant: Variant) =>
+          variant.is_active
       );
 
-      const {
-        data: variantData,
-        error: variantError,
-      } = await supabase
-        .from("product_variants")
-        .select(
-          "id, product_id, sku, size, color, price, is_active"
-        )
-        .in("product_id", productIds)
-        .eq("is_active", true);
+    if (!activeVariants.length) {
+      setRows([]);
+      setStockValues({});
+      return;
+    }
 
-      if (variantError) {
-        console.error(variantError);
-        setError("Unable to load variants.");
-        return;
-      }
-
-      const variants =
-        (variantData ?? []) as Variant[];
-
-      if (!variants.length) {
-        setRows([]);
-        return;
-      }
-
-      const variantIds = variants.map(
-        (variant) => variant.id
-      );
-
-      const {
-        data: inventoryData,
-        error: inventoryError,
-      } = await supabase
-        .from("inventory")
-        .select("variant_id, quantity")
-        .in("variant_id", variantIds);
-
-      if (inventoryError) {
-        console.error(inventoryError);
-        setError("Unable to load inventory.");
-        return;
-      }
-
-      const inventory =
-        (inventoryData ?? []) as Inventory[];
-
-      const productMap = new Map(
-        products.map((product) => [
+    const productMap = new Map(
+      products.map(
+        (product: Product) => [
           product.id,
           product.name,
-        ])
-      );
+        ]
+      )
+    );
 
-      const inventoryMap = new Map(
-        inventory.map((item) => [
+    const inventoryMap = new Map(
+      inventory.map(
+        (item: Inventory) => [
           item.variant_id,
-          Number(item.quantity ?? 0),
-        ])
-      );
+          Number(
+            item.quantity ?? 0
+          ),
+        ]
+      )
+    );
 
-      const combinedRows =
-        variants.map((variant) => ({
+    const combinedRows: InventoryRow[] =
+      activeVariants.map(
+        (variant: Variant) => ({
           variantId: variant.id,
+
           productName:
             productMap.get(
               variant.product_id
             ) || "Unknown product",
+
           sku: variant.sku,
-          option:
-            [
-              variant.size,
-              variant.color,
-            ]
-              .filter(Boolean)
-              .join(" / ") || "—",
+
+          option: [
+            variant.size,
+            variant.color,
+          ]
+            .filter(Boolean)
+            .join(" / ") || "—",
+
           price: Number(
             variant.price ?? 0
           ),
+
           quantity:
             inventoryMap.get(
               variant.id
             ) ?? 0,
-        }));
+        })
+      );
 
-      setRows(combinedRows);
+    setRows(combinedRows);
 
-      const values: Record<string, string> = {};
+    const values: Record<
+      string,
+      string
+    > = {};
 
-      combinedRows.forEach((row) => {
-        values[row.variantId] =
-          String(row.quantity);
-      });
+    combinedRows.forEach((row: InventoryRow) => {
+  values[row.variantId] =
+    String(row.quantity);
+});
 
-      setStockValues(values);
-    } catch (error) {
-      console.error(error);
-      setError("Unable to load inventory.");
-    } finally {
-      setLoading(false);
-    }
+    setStockValues(values);
+  } catch (error) {
+    console.error(error);
+    setError(
+      "Unable to load inventory."
+    );
+  } finally {
+    setLoading(false);
   }
-
+}
   useEffect(() => {
     loadInventory();
   }, []);
@@ -305,7 +291,21 @@ export default function InventoryPage() {
         return;
       }
 
-      await loadInventory();
+      setRows((prev) =>
+  prev.map((item) =>
+    item.variantId === row.variantId
+      ? {
+          ...item,
+          quantity,
+        }
+      : item
+  )
+);
+
+setStockValues((prev) => ({
+  ...prev,
+  [row.variantId]: String(quantity),
+}));
     } catch (error) {
       console.error(error);
 

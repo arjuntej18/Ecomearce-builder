@@ -145,3 +145,14 @@ rgba(253, 246, 239, 0.65)
     opacity: 1;
   }
 }
+
+
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: #ffffff;
+  color: #111111;
+}
